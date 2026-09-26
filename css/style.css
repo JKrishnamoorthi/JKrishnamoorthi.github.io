@@ -1,30 +1,29 @@
-:root { --nav-h: 28px; }          /* will be updated by JS */
-
-header{
-  position: fixed;                /* fixed = always on top */
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 1000;
-  background: var(--bg, #fff);
-  border-bottom: 1px solid var(--border, #e5e7eb);
-  backdrop-filter: saturate(180%) blur(6px);
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  line-height: 1.6;
+  color: #0f172a;
 }
 
-nav{
+.container {
   max-width: 1000px;
-  margin: 0 auto;
-  padding: 12px 20px;
-  min-height: var(--nav-h);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  margin: auto;
+  padding: 24px;
 }
 
-/* Offset the whole page and anchor jumps by header height */
-html, body { scroll-padding-top: var(--nav-h); }
-body       { padding-top: var(--nav-h); }
+h1 {
+  margin: 0 0 8px;
+  font-size: 2rem;
+}
 
-/* Optional: avoid first-section top-margin collapse looking tight */
-main .hero { margin-top: 8px; }
+h2 {
+  margin-top: 40px;
+}
+
+.muted {
+  color: #64748b;
+}
+
+a {
+  color: inherit;
+}

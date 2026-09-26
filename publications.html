@@ -1,0 +1,877 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Publications — Krishnamoorthi J</title>
+  <meta name="description" content="Publications and preprints by Krishnamoorthi J." />
+  <link rel="icon" href="images/favicon.png" />
+  <style>
+*,
+
+      *::before,
+
+      *::after {
+
+        box-sizing: border-box;
+
+        margin: 0;
+
+        padding: 0;
+
+      }
+
+      :root {
+
+        --nav-h: 56px;
+
+        --accent: #1d4ed8;
+
+        --text: #0f172a;
+
+        --muted: #64748b;
+
+        --border: #e5e7eb;
+
+        --bg: #fff;
+
+        --bg2: #f8fafc;
+
+        --radius: 12px;
+
+        --max-w: 1000px;
+
+      }
+
+      html {
+
+        scroll-behavior: smooth;
+
+        scroll-padding-top: var(--nav-h);
+
+      }
+
+      body {
+
+        font-family: system-ui, -apple-system, sans-serif;
+
+        line-height: 1.6;
+
+        color: var(--text);
+
+        background: var(--bg);
+
+        padding-top: var(--nav-h);
+
+      }
+
+      /* ── Header ── */
+
+      header {
+
+        position: fixed;
+
+        top: 0;
+
+        left: 0;
+
+        right: 0;
+
+        z-index: 1000;
+
+        background: rgba(255, 255, 255, 0.88);
+
+        border-bottom: 1px solid var(--border);
+
+        backdrop-filter: saturate(180%) blur(8px);
+
+        -webkit-backdrop-filter: saturate(180%) blur(8px);
+
+      }
+
+      nav {
+
+        max-width: var(--max-w);
+
+        margin: 0 auto;
+
+        padding: 13px 24px;
+
+        display: flex;
+
+        justify-content: space-between;
+
+        align-items: center;
+
+        gap: 16px;
+
+      }
+
+      .nav-brand {
+
+        font-weight: 800;
+
+        font-size: 1rem;
+
+        color: var(--text);
+
+        text-decoration: none;
+
+        letter-spacing: -0.01em;
+
+        flex-shrink: 0;
+
+      }
+
+      .nav-links {
+
+        display: flex;
+
+        gap: 6px;
+
+        list-style: none;
+
+        flex-wrap: wrap;
+
+      }
+
+      .nav-links a {
+
+        text-decoration: none;
+
+        color: var(--muted);
+
+        font-size: 0.88rem;
+
+        font-weight: 500;
+
+        padding: 5px 10px;
+
+        border-radius: 6px;
+
+        transition: color 0.15s, *background* 0.15s;
+
+      }
+
+      .nav-links a:hover {
+
+        color: var(--accent);
+
+        background: #eff6ff;
+
+      }
+
+      /* ── Layout ── */
+
+      .container {
+
+        max-width: var(--max-w);
+
+        margin: 0 auto;
+
+        padding: 0 24px 80px;
+
+      }
+
+      section {
+
+        padding-top: 32px;
+
+      }
+
+      /* ── Hero ── */
+
+      .hero {
+
+        display: grid;
+
+        grid-template-columns: 168px 1fr;
+
+        gap: 36px;
+
+        align-items: center;
+
+        padding: 48px 0 16px;
+
+      }
+
+      .hero img {
+
+        width: 168px;
+
+        height: 168px;
+
+        border-radius: 50%;
+
+        object-fit: cover;
+
+        border: 3px solid var(--border);
+
+        display: block;
+
+      }
+
+      .hero h1 {
+
+        font-size: 2.1rem;
+
+        font-weight: 800;
+
+        letter-spacing: -0.025em;
+
+        line-height: 1.15;
+
+        margin-bottom: 6px;
+
+      }
+
+      .hero .affil {
+
+        font-size: 0.9rem;
+
+        color: var(--muted);
+
+        margin-bottom: 14px;
+
+        line-height: 1.5;
+
+      }
+
+      .hero .bio {
+
+        font-size: 0.95rem;
+
+        color: #374151;
+
+        max-width: 840px;
+
+        line-height: 1.65;
+
+      }
+
+      .hero-links {
+
+        display: flex;
+
+        gap: 8px;
+
+        flex-wrap: wrap;
+
+        margin-top: 18px;
+
+      }
+
+      .btn {
+
+        display: inline-flex;
+
+        align-items: center;
+
+        gap: 5px;
+
+        padding: 7px 15px;
+
+        border-radius: 7px;
+
+        font-size: 0.83rem;
+
+        font-weight: 600;
+
+        text-decoration: none;
+
+        transition: *background* 0.15s, color 0.15s, border-color 0.15s;
+
+        border: 1px solid transparent;
+
+        cursor: pointer;
+
+      }
+
+      .btn-primary {
+
+        background: var(--accent);
+
+        color: #fff;
+
+      }
+
+      .btn-primary:hover {
+
+        background: #1e40af;
+
+      }
+
+      .btn-outline {
+
+        background: transparent;
+
+        color: var(--text);
+
+        border-color: var(--border);
+
+      }
+
+      .btn-outline:hover {
+
+        background: var(--bg2);
+
+        border-color: #cbd5e1;
+
+      }
+
+      /* ── Section headings ── */
+
+      .section-title {
+
+        font-size: 1.3rem;
+
+        font-weight: 700;
+
+        letter-spacing: -0.01em;
+
+        margin-bottom: 18px;
+
+        padding-bottom: 10px;
+
+        border-bottom: 2px solid var(--border);
+
+      }
+
+      /* ── Cards ── */
+
+      .card {
+
+        border: 1px solid var(--border);
+
+        border-radius: var(--radius);
+
+        padding: 20px 22px;
+
+        margin-top: 14px;
+
+        background: var(--bg);
+
+        transition: box-shadow 0.15s;
+
+      }
+
+      .card:hover {
+
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+
+      }
+
+      .card-title {
+
+        font-weight: 700;
+
+        font-size: 0.97rem;
+
+        margin-bottom: 3px;
+
+      }
+
+      .card-meta {
+
+        font-size: 0.8rem;
+
+        color: var(--muted);
+
+        margin-bottom: 8px;
+
+      }
+
+      .card p,
+
+      .card-desc {
+
+        font-size: 0.91rem;
+
+        color: #374151;
+
+        line-height: 1.6;
+
+      }
+
+      .tag {
+
+        display: inline-block;
+
+        padding: 2px 9px;
+
+        border-radius: 999px;
+
+        font-size: 0.73rem;
+
+        font-weight: 600;
+
+        background: #eff6ff;
+
+        color: #1d4ed8;
+
+        margin: 5px 3px 0 0;
+
+      }
+
+      /* ── Publication list ── */
+
+      .pub-list {
+
+        list-style: none;
+
+      }
+
+      .pub-list li {
+
+        padding: 16px 0;
+
+        border-bottom: 1px solid var(--border);
+
+        font-size: 0.92rem;
+
+      }
+
+      .pub-list li:last-child {
+
+        border-bottom: none;
+
+      }
+
+      .pub-authors {
+
+        color: var(--muted);
+
+        font-size: 0.83rem;
+
+        margin-bottom: 2px;
+
+      }
+
+      .pub-title {
+
+        font-weight: 700;
+
+        color: var(--text);
+
+        margin-bottom: 3px;
+
+      }
+
+      .pub-title a {
+
+        color: var(--accent);
+
+        text-decoration: none;
+
+      }
+
+      .pub-title a:hover {
+
+        text-decoration: underline;
+
+      }
+
+      .pub-journal {
+
+        font-size: 0.82rem;
+
+        color: var(--muted);
+
+        font-style: italic;
+
+      }
+
+      .pub-abstract {
+
+        font-size: 0.87rem;
+
+        color: #374151;
+
+        margin-top: 5px;
+
+        line-height: 1.55;
+
+      }
+
+      .pub-links {
+
+        margin-top: 8px;
+
+        display: flex;
+
+        gap: 6px;
+
+        flex-wrap: wrap;
+
+      }
+
+      .pub-link {
+
+        font-size: 0.76rem;
+
+        font-weight: 600;
+
+        padding: 3px 10px;
+
+        border: 1px solid var(--border);
+
+        border-radius: 5px;
+
+        text-decoration: none;
+
+        color: var(--muted);
+
+        transition: *background* 0.12s, color 0.12s;
+
+      }
+
+      .pub-link:hover {
+
+        background: var(--bg2);
+
+        color: var(--accent);
+
+      }
+
+      /* ── Timeline ── */
+
+      .timeline-item {
+
+        display: grid;
+
+        grid-template-columns: 110px 1fr;
+
+        gap: 14px;
+
+        padding: 13px 0;
+
+        border-bottom: 1px solid var(--border);
+
+        font-size: 0.92rem;
+
+      }
+
+      .timeline-item:last-child {
+
+        border-bottom: none;
+
+      }
+
+      .tl-year {
+
+        color: var(--muted);
+
+        font-size: 0.8rem;
+
+        font-weight: 500;
+
+        padding-top: 2px;
+
+      }
+
+      .tl-title {
+
+        font-weight: 700;
+
+      }
+
+      .tl-sub {
+
+        font-size: 0.83rem;
+
+        color: var(--muted);
+
+        margin-top: 1px;
+
+      }
+
+      /* ── Contact ── */
+
+      .contact-grid {
+
+        display: flex;
+
+        flex-wrap: wrap;
+
+        gap: 10px;
+
+        margin-top: 16px;
+
+      }
+
+      .contact-item {
+
+        display: flex;
+
+        align-items: center;
+
+        gap: 8px;
+
+        font-size: 0.88rem;
+
+        color: var(--text);
+
+        text-decoration: none;
+
+        padding: 9px 15px;
+
+        border: 1px solid var(--border);
+
+        border-radius: 8px;
+
+        background: var(--bg);
+
+        transition: *background* 0.13s, border-color 0.13s;
+
+      }
+
+      .contact-item:hover {
+
+        background: var(--bg2);
+
+        border-color: #cbd5e1;
+
+      }
+
+      /* ── Footer ── */
+
+      footer {
+
+        border-top: 1px solid var(--border);
+
+        text-align: center;
+
+        padding: 22px 24px;
+
+        font-size: 0.82rem;
+
+        color: var(--muted);
+
+        line-height: 1.8;
+
+      }
+
+      /* ── Responsive ── */
+
+      @media (max-width: 640px) {
+
+        .hero {
+
+          grid-template-columns: 1fr;
+
+          text-align: center;
+
+          padding-top: 32px;
+
+        }
+
+        .hero img {
+
+          margin: 0 auto;
+
+        }
+
+        .hero-links {
+
+          justify-content: center;
+
+        }
+
+        .timeline-item {
+
+          grid-template-columns: 1fr;
+
+          gap: 2px;
+
+        }
+
+        nav {
+
+          padding: 10px 16px;
+
+        }
+
+        .container {
+
+          padding: 0 16px 60px;
+
+        }
+
+      }
+  </style>
+</head>
+<body>
+
+<header>
+  <nav>
+    <a href="index.html" class="nav-brand">Krishnamoorthi J</a>
+    <ul class="nav-links">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="research.html">Research</a></li>
+      <li><a href="publications.html">Publications</a></li>
+      <li><a href="talks.html">Talks</a></li>
+      <li><a href="contact.html">Contact</a></li>
+      <li>
+        <a href="cv/KrishnamoorthiJ_CV.pdf" class="btn btn-outline"
+           style="padding: 5px 13px; font-size: 0.83rem">CV ↓</a>
+      </li>
+    </ul>
+  </nav>
+</header>
+
+<main class="container">
+
+<div class="hero">
+  <img src="images/profile_image.JPG" alt="Portrait of Krishnamoorthi J" />
+  <div>
+    <h1>Krishnamoorthi J</h1>
+    <p class="affil">
+      PhD Research Scholar, Aligarh Muslim University · Senior Research Fellow, Institute of Physics, Bhubaneswar
+    </p>
+    <p class="bio">
+      I work on neutrino oscillation phenomenology, with a focus on neutrino
+      tomography of the Earth, non-standard neutrino interactions, long-range
+      neutrino interactions, and detector analysis at large-scale neutrino experiments.
+    </p>
+    <div class="hero-links">
+      <a href="mailto:krishalphabet@gmail.com" class="btn btn-outline" target="_blank">✉&nbsp; krishalphabet@gmail.com</a>
+      <a href="https://arxiv.org/search/?searchtype=author&query=Krishnamoorthi+J" class="btn btn-outline" target="_blank">arXiv</a>
+      <a href="https://inspirehep.net/authors/2505733" class="btn btn-outline" target="_blank">INSPIRE</a>
+      <a href="https://orcid.org/0009-0006-1352-2248" class="btn btn-outline" target="_blank">ORCID</a>
+      <a href="https://github.com/JKrishnamoorthi" class="btn btn-outline" target="_blank">GitHub</a>
+    </div>
+  </div>
+</div>
+
+<section id="publications">
+  <h2 class="section-title">Publications</h2>
+
+  <ol class="pub-list">
+    <li>
+      <div class="pub-authors">IceCube Collaboration</div>
+      <div class="pub-title">
+        <a href="https://arxiv.org/abs/2608.06543" target="_blank">
+          Estimating the sensitivity of the IceCube Upgrade to probe the
+          interior of the Earth using atmospheric neutrino oscillations
+        </a>
+      </div>
+      <div class="pub-journal">arXiv:2608.06543 [hep-ex] · 2026</div>
+      <div class="pub-links">
+        <a href="https://arxiv.org/abs/2608.06543" class="pub-link" target="_blank">arXiv</a>
+      </div>
+    </li>
+
+    <li>
+      <div class="pub-authors">Gopal Garg, <strong>Krishnamoorthi J.</strong>, Anil Kumar, Sanjib Kumar Agarwalla</div>
+      <div class="pub-title">
+        <a href="https://arxiv.org/abs/2606.03443" target="_blank">
+          Constraints on long-range neutrino interactions from a variety of
+          U(1)' symmetries using atmospheric neutrinos at IceCube DeepCore
+        </a>
+      </div>
+      <div class="pub-journal">arXiv:2606.03443 [hep-ph] · 2026</div>
+      <div class="pub-links">
+        <a href="https://arxiv.org/abs/2606.03443" class="pub-link" target="_blank">arXiv</a>
+      </div>
+    </li>
+
+    <li>
+      <div class="pub-authors"><strong>Krishnamoorthi J.</strong>, Anil Kumar, Sanjib Kumar Agarwalla</div>
+      <div class="pub-title">
+        <a href="https://arxiv.org/abs/2604.16157" target="_blank">
+          δ<sub>CP</sub>-free constraints on NSI parameters
+          ε<sub>eμ</sub> and ε<sub>eτ</sub> using high-purity
+          ν<sub>μ</sub> CC events at IceCube DeepCore
+        </a>
+      </div>
+      <div class="pub-journal">Physical Review D 114, 015007 (2026) · arXiv:2604.16157 [hep-ph]</div>
+      <div class="pub-links">
+        <a href="https://arxiv.org/abs/2604.16157" class="pub-link" target="_blank">arXiv</a>
+      </div>
+    </li>
+
+    <li>
+      <div class="pub-authors">Gopal Garg, <strong>Krishnamoorthi J.</strong>, Anil Kumar, Sanjib Kumar Agarwalla</div>
+      <div class="pub-title">
+        <a href="https://arxiv.org/abs/2601.01220" target="_blank">
+          First Constraints on Long-Range Neutrino Interactions using IceCube DeepCore
+        </a>
+      </div>
+      <div class="pub-journal">arXiv:2601.01220 [hep-ph] · 2026</div>
+      <div class="pub-links">
+        <a href="https://arxiv.org/abs/2601.01220" class="pub-link" target="_blank">arXiv</a>
+      </div>
+    </li>
+
+    <li>
+      <div class="pub-authors"><strong>Krishnamoorthi J.</strong>, Anil Kumar, Sanjib Kumar Agarwalla</div>
+      <div class="pub-title">
+        <a href="https://arxiv.org/abs/2512.22632" target="_blank">
+          Stringent constraints on non-standard neutrino interactions using
+          high-purity ν<sub>μ</sub> CC events in IceCube DeepCore
+        </a>
+      </div>
+      <div class="pub-journal">arXiv:2512.22632 [hep-ph] · 2025</div>
+      <div class="pub-links">
+        <a href="https://arxiv.org/abs/2512.22632" class="pub-link" target="_blank">arXiv</a>
+      </div>
+    </li>
+
+    <li>
+      <div class="pub-authors"><strong>Krishnamoorthi J.</strong>, Anuj Kumar Upadhyay, Anil Kumar, Sanjib Kumar Agarwalla</div>
+      <div class="pub-title">
+        <a href="https://doi.org/10.1007/JHEP07(2025)213" target="_blank">
+          Probing Earth's core using atmospheric neutrino oscillations in the presence of NSI at INO-ICAL
+        </a>
+      </div>
+      <div class="pub-journal">Journal of High Energy Physics · 2025</div>
+      <div class="pub-links">
+        <a href="https://doi.org/10.1007/JHEP07(2025)213" class="pub-link" target="_blank">Journal</a>
+      </div>
+    </li>
+
+    <li>
+      <div class="pub-authors">Mandar Saraf et al.</div>
+      <div class="pub-title">
+        <a href="https://arxiv.org/abs/2301.12486" target="_blank">
+          Design, fabrication and large-scale qualification of cosmic muon veto scintillator detectors
+        </a>
+      </div>
+      <div class="pub-journal">Journal of Instrumentation 18, P05003 (2023) · arXiv:2301.12486 [physics.ins-det]</div>
+      <div class="pub-links">
+        <a href="https://arxiv.org/abs/2301.12486" class="pub-link" target="_blank">arXiv</a>
+      </div>
+    </li>
+  </ol>
+
+  <p style="font-size: 0.85rem; color: var(--muted); margin-top: 18px">
+    Full publication record on
+    <a href="https://inspirehep.net/authors/2505733" target="_blank" style="color: var(--accent)">INSPIRE-HEP</a>.
+  </p>
+</section>
+
+</main>
+
+<footer>
+  © <span id="year"></span> Krishnamoorthi J &nbsp;·&nbsp; Institute of Physics, Bhubaneswar<br />
+  Built with GitHub Pages
+</footer>
+
+
+<script>
+  document.getElementById("year").textContent = new Date().getFullYear();
+  (function () {
+    const header = document.querySelector("header");
+    if (!header) return;
+    function sync() {
+      document.documentElement.style.setProperty("--nav-h", header.offsetHeight + "px");
+    }
+    sync();
+    window.addEventListener("resize", sync);
+    new ResizeObserver(sync).observe(header);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(sync);
+  })();
+</script>
+
+</body>
+</html>

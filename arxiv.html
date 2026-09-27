@@ -3,130 +3,388 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>arXiv Explorer | Krishnamoorthi J.</title>
-  <link rel="stylesheet" href="css/style.css">
-  <link rel="stylesheet" href="css/arxiv.css">
+  <title>arXiv Activity · Krishnamoorthi J.</title>
+  <style>
+    :root {
+      --nav-h: 56px;
+      --accent: #1d4ed8;
+      --text: #0f172a;
+      --muted: #64748b;
+      --border: #e5e7eb;
+      --bg: #fff;
+      --bg2: #f8fafc;
+      --radius: 12px;
+      --max-w: 1000px;
+    }
+    * { box-sizing: border-box; }
+    html {
+      scroll-behavior: smooth;
+      scroll-padding-top: var(--nav-h);
+    }
+    body {
+      margin: 0;
+      padding-top: var(--nav-h);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      line-height: 1.6;
+    }
+    a { color: inherit; }
+    header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 1000;
+      background: rgba(255, 255, 255, 0.88);
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: saturate(180%) blur(8px);
+      -webkit-backdrop-filter: saturate(180%) blur(8px);
+    }
+    nav {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      padding: 13px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+    }
+    .nav-brand {
+      font-weight: 800;
+      font-size: 1rem;
+      color: var(--text);
+      text-decoration: none;
+      letter-spacing: -0.01em;
+      flex-shrink: 0;
+    }
+    .nav-links {
+      display: flex;
+      gap: 6px;
+      list-style: none;
+      flex-wrap: wrap;
+    }
+    .nav-links a {
+      text-decoration: none;
+      color: var(--muted);
+      font-size: 0.88rem;
+      font-weight: 500;
+      padding: 5px 10px;
+      border-radius: 6px;
+      transition: color 0.15s, background 0.15s;
+    }
+    .nav-links a:hover {
+      color: var(--accent);
+      background: #eff6ff;
+    }
+    main {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      padding: 0 24px 80px;
+    }
+    .eyebrow {
+      color: var(--accent);
+      font-size: .82rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    h1 {
+      margin: 5px 0 8px;
+      font-size: 2rem;
+      line-height: 1.2;
+      letter-spacing: -.03em;
+    }
+    .intro {
+      margin: 0;
+      color: var(--muted);
+      max-width: 720px;
+    }
+    section { padding-top: 32px; }
+    h2 {
+      margin: 0 0 18px;
+      padding-bottom: 10px;
+      font-size: 1.3rem;
+      font-weight: 700;
+      line-height: 1.3;
+      letter-spacing: -0.01em;
+      border-bottom: 2px solid var(--border);
+    }
+    .card {
+      margin-top: 14px;
+      padding: 20px 22px;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 1px 2px rgba(15,23,42,.02);
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px 18px;
+      margin-bottom: 12px;
+    }
+    select {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 7px 10px;
+      background: #fff;
+      color: var(--text);
+      font: inherit;
+    }
+    .checks {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+    }
+    .checks label {
+      color: var(--muted);
+      font-size: .88rem;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .checks input { accent-color: var(--accent); }
+    #chart {
+      width: 100%;
+      overflow-x: auto;
+    }
+    #chart svg {
+      display: block;
+      width: 100%;
+      min-width: 650px;
+      height: 300px;
+    }
+    .grid { stroke: #e5e7eb; stroke-width: 1; }
+    .axis-label { fill: #64748b; font-size: 11px; }
+    .chart-line {
+      fill: none;
+      stroke-width: 2.2;
+      vector-effect: non-scaling-stroke;
+    }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 18px;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: .84rem;
+    }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .legend-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .stat {
+      padding: 13px 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--bg2);
+    }
+    .stat-label {
+      color: var(--muted);
+      font-size: .78rem;
+    }
+    .stat-value {
+      margin-top: 2px;
+      font-size: 1.1rem;
+      font-weight: 700;
+    }
+    .pub-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    .pub-list li {
+      padding: 18px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .pub-list li:last-child { border-bottom: 0; }
+    .pub-authors {
+      color: var(--muted);
+      font-size: .88rem;
+    }
+    .pub-title {
+      margin-top: 3px;
+      font-weight: 650;
+    }
+    .pub-title a {
+      color: var(--text);
+      text-decoration: none;
+    }
+    .pub-title a:hover { color: var(--accent); }
+    .pub-journal {
+      color: var(--muted);
+      font-size: .86rem;
+      margin-top: 3px;
+    }
+    .pub-abstract {
+      color: var(--muted);
+      font-size: .9rem;
+      margin: 8px 0 0;
+    }
+    .pub-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 9px;
+    }
+    .pub-link {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: .84rem;
+      font-weight: 600;
+    }
+    .pub-link:hover { text-decoration: underline; }
+    .status {
+      color: var(--muted);
+      font-size: .88rem;
+    }
+    .error {
+      color: #b91c1c;
+    }
+    footer {
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: .82rem;
+      text-align: center;
+      padding: 20px 24px 28px;
+    }
+    @media (max-width: 700px) {
+      main { padding: 30px 16px 48px; }
+      .stats { grid-template-columns: 1fr; }
+      h1 { font-size: 1.7rem; }
+    }
+    @media (max-width: 640px) {
+      nav {
+        padding: 10px 16px;
+      }
+    }
+  </style>
 </head>
 <body>
-<header class="site-header">
-  <div class="container nav-wrap">
-    <a class="brand" href="index.html">Krishnamoorthi J.</a>
-    <nav class="nav">
-      <a href="index.html">Home</a>
-      <a href="research.html">Research</a>
-      <a href="publications.html">Publications</a>
-      <a href="projects.html">Projects</a>
-      <a href="talks.html">Talks</a>
-      <a href="arxiv.html" class="active">arXiv</a>
-      <a href="contact.html">Contact</a>
-    </nav>
-  </div>
+<header>
+  <nav>
+    <a href="index.html" class="nav-brand">Krishnamoorthi J</a>
+    <ul class="nav-links">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="research.html">Research</a></li>
+      <li><a href="publications.html">Publications</a></li>
+      <li><a href="talks.html">Talks</a></li>
+      <li><a href="arxiv.html">arXiv Explorer</a></li>
+      <li><a href="contact.html">Contact</a></li>
+      <li>
+        <a href="cv/KrishnamoorthiJ_CV.pdf" class="btn btn-outline"
+           style="padding: 5px 13px; font-size: 0.83rem">CV ↓</a>
+      </li>
+    </ul>
+  </nav>
 </header>
 
-<main class="container arxiv-page">
-  <section class="page-hero">
-    <p class="eyebrow">Research dashboard</p>
-    <h1>arXiv Explorer</h1>
-    <p>Explore recent papers in high-energy physics, astrophysics, and detector physics.</p>
-  </section>
+<main>
 
-  <section class="card search-card">
-    <div class="tabs">
-      <button class="tab active" data-mode="keyword">Keyword</button>
-      <button class="tab" data-mode="author">Author</button>
-    </div>
-    <div class="search-row">
-      <input id="searchInput" type="search" placeholder="e.g. neutrino oscillation, Earth tomography, NSI" autocomplete="off">
-      <select id="category">
-        <option value="">All relevant categories</option>
-        <option value="hep-ph">hep-ph</option>
-        <option value="hep-ex">hep-ex</option>
-        <option value="hep-th">hep-th</option>
-        <option value="nucl-th">nucl-th</option>
-        <option value="astro-ph.HE">astro-ph.HE</option>
-        <option value="astro-ph.CO">astro-ph.CO</option>
-        <option value="physics.ins-det">physics.ins-det</option>
-      </select>
-      <select id="maxResults">
-        <option value="10">10 results</option>
-        <option value="20" selected>20 results</option>
-        <option value="50">50 results</option>
-      </select>
-      <button id="searchButton" class="button">Search</button>
-    </div>
-    <div class="search-footer">
-      <span id="searchStatus">Search arXiv by keyword or author.</span>
-      <button id="myFavouritesButton" class="button secondary">★ My favourites</button>
-    </div>
-  </section>
+  <!-- <div class="eyebrow">arXiv</div> -->
+  <h1>arXiv Activity</h1>
+  <p class="intro">
+    A compact view of recent arXiv activity in areas relevant to neutrino physics,
+    particle physics, astrophysics, and detector physics.
+  </p>
 
-  <section class="card activity-card">
-    <div class="section-heading">
-      <div>
-        <p class="eyebrow">Research activity</p>
-        <h2>HEP &amp; astrophysics activity</h2>
-        <p>Daily activity in the arXiv categories most relevant to particle physics, astrophysics, and detector physics.</p>
+  <section>
+    <h2>Research activity</h2>
+    <div class="card">
+      <div class="controls">
+        <label>
+          Range:
+          <select id="range">
+            <option value="30">30 days</option>
+            <option value="90" selected>90 days</option>
+            <option value="180">180 days</option>
+            <option value="365">1 year</option>
+          </select>
+        </label>
       </div>
-      <select id="activityRange">
-        <option value="30">Last 30 days</option>
-        <option value="90" selected>Last 90 days</option>
-        <option value="180">Last 180 days</option>
-        <option value="365">Last year</option>
-      </select>
-    </div>
 
-    <div class="category-controls">
-      <label><input type="checkbox" class="category-toggle" value="hep-ph" checked> hep-ph</label>
-      <label><input type="checkbox" class="category-toggle" value="hep-ex" checked> hep-ex</label>
-      <label><input type="checkbox" class="category-toggle" value="hep-th"> hep-th</label>
-      <label><input type="checkbox" class="category-toggle" value="nucl-th"> nucl-th</label>
-      <label><input type="checkbox" class="category-toggle" value="astro-ph.HE" checked> astro-ph.HE</label>
-      <label><input type="checkbox" class="category-toggle" value="astro-ph.CO" checked> astro-ph.CO</label>
-      <label><input type="checkbox" class="category-toggle" value="physics.ins-det" checked> physics.ins-det</label>
-    </div>
+      <div class="checks">
+        <label><input type="checkbox" value="hep-ph" checked> hep-ph</label>
+        <label><input type="checkbox" value="hep-ex" checked> hep-ex</label>
+        <label><input type="checkbox" value="hep-th"> hep-th</label>
+        <label><input type="checkbox" value="nucl-th"> nucl-th</label>
+        <label><input type="checkbox" value="astro-ph.HE" checked> astro-ph.HE</label>
+        <label><input type="checkbox" value="astro-ph.CO" checked> astro-ph.CO</label>
+        <label><input type="checkbox" value="physics.ins-det" checked> physics.ins-det</label>
+      </div>
 
-    <div id="activityChart" class="activity-chart"></div>
-    <div id="activityEmpty" class="empty-state" style="display:none;">
-      <strong>No activity data yet.</strong>
-      <span>The GitHub Actions workflow will populate data/daily.json.</span>
-    </div>
+      <div id="chart">
+        <p class="status">Loading activity data…</p>
+      </div>
+      <div id="legend" class="legend"></div>
 
-    <div class="stats-grid">
-      <div class="stat"><span class="stat-label">Selected categories</span><strong id="periodTotal">—</strong></div>
-      <div class="stat"><span class="stat-label">Daily average</span><strong id="periodAverage">—</strong></div>
-      <div class="stat"><span class="stat-label">Largest category</span><strong id="peakDay">—</strong></div>
-      <div class="stat"><span class="stat-label">Most active weekday</span><strong id="weekdayPeak">—</strong></div>
-    </div>
-  </section>
-
-  <section class="results-section">
-    <div class="section-heading">
-      <div>
-        <p class="eyebrow">Search</p>
-        <h2 id="resultsTitle">Results</h2>
-        <p id="resultsSubtitle">Search results will appear here.</p>
+      <div class="stats">
+        <div class="stat">
+          <div class="stat-label">Selected categories</div>
+          <div class="stat-value" id="selectedCount">—</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Average per day</div>
+          <div class="stat-value" id="dailyAverage">—</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Peak category/day</div>
+          <div class="stat-value" id="peak">—</div>
+        </div>
       </div>
     </div>
-    <div id="results"></div>
   </section>
 
-  <section id="favouritesSection" class="results-section hidden">
-    <div class="section-heading">
-      <div>
-        <p class="eyebrow">Saved locally</p>
-        <h2>My favourites</h2>
-        <p>Papers saved in this browser.</p>
-      </div>
-      <button id="clearFavourites" class="button secondary">Clear all</button>
+  <section>
+    <h2>My favourite papers</h2>
+    <div class="card">
+      <p id="favStatus" class="status">Loading favourite papers…</p>
+      <ul id="favourites" class="pub-list"></ul>
     </div>
-    <div id="favourites"></div>
   </section>
 </main>
 
-<footer class="site-footer">
-  <div class="container">© <span id="year"></span> Krishnamoorthi J.</div>
+<footer>
+  © <span id="year"></span> Krishnamoorthi J &nbsp;·&nbsp; Institute of Physics, Bhubaneswar<br />
+  Built with GitHub Pages
 </footer>
 
+<script>
+  document.getElementById("year").textContent = new Date().getFullYear();
+
+  (function () {
+    const header = document.querySelector("header");
+    if (!header) return;
+    function sync() {
+      document.documentElement.style.setProperty("--nav-h", header.offsetHeight + "px");
+    }
+    sync();
+    window.addEventListener("resize", sync);
+    new ResizeObserver(sync).observe(header);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(sync);
+  })();
+  (function () {
+    const header = document.querySelector("header");
+    if (!header) return;
+    function sync() {
+      document.documentElement.style.setProperty("--nav-h", header.offsetHeight + "px");
+    }
+    sync();
+    window.addEventListener("resize", sync);
+    new ResizeObserver(sync).observe(header);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(sync);
+  })();
+</script>
 <script src="js/arxiv.js"></script>
 </body>
 </html>

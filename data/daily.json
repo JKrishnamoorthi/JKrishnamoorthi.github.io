@@ -1,5 +1,16 @@
 [
   {
+    "date": "2026-09-23",
+    "total": 1395,
+    "hep-ph": 46,
+    "hep-ex": 10,
+    "hep-th": 33,
+    "nucl-th": 12,
+    "astro-ph.HE": 41,
+    "astro-ph.CO": 17,
+    "physics.ins-det": 7
+  },
+  {
     "date": "2026-09-24",
     "total": 1177,
     "hep-ph": 22,
@@ -9,16 +20,5 @@
     "astro-ph.HE": 19,
     "astro-ph.CO": 14,
     "physics.ins-det": 7
-  },
-  {
-    "date": "2026-09-26",
-    "total": 0,
-    "hep-ph": 0,
-    "hep-ex": 0,
-    "hep-th": 0,
-    "nucl-th": 0,
-    "astro-ph.HE": 0,
-    "astro-ph.CO": 0,
-    "physics.ins-det": 0
   }
 ]

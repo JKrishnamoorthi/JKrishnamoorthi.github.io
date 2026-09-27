@@ -32,10 +32,7 @@ NS = {
     "a": "http://www.w3.org/2005/Atom"
 }
 
-PAGE_SIZE = 200
-
-# arXiv asks clients to avoid excessive request rates.
-REQUEST_DELAY = 5
+PAGE_SIZE = 100
 
 
 def load_json(path, default):
@@ -61,6 +58,32 @@ def save_json(path, obj):
     tmp.replace(path)
 
 
+def make_query(day):
+    """
+    arXiv API submittedDate format:
+
+        YYYYMMDDHHMM
+
+    Example:
+
+        submittedDate:[202609260000 TO 202609270000]
+    """
+
+    start = datetime.strptime(
+        day,
+        "%Y-%m-%d"
+    )
+
+    end = start + timedelta(days=1)
+
+    start_string = start.strftime("%Y%m%d%H%M")
+    end_string = end.strftime("%Y%m%d%H%M")
+
+    return (
+        f"submittedDate:[{start_string} TO {end_string}]"
+    )
+
+
 def request_arxiv(query, start=0):
 
     params = urllib.parse.urlencode({
@@ -74,12 +97,11 @@ def request_arxiv(query, start=0):
     url = f"{API}?{params}"
 
     headers = {
-        "User-Agent": (
-            "Mozilla/5.0 "
-            "(compatible; JKrishnamoorthi-ArxivStats/1.0; "
-            "+https://jkrishnamoorthi.github.io/)"
-        ),
-        "Accept": "application/atom+xml",
+        "User-Agent":
+            "JKrishnamoorthi-arxiv-dashboard/1.0 "
+            "(https://jkrishnamoorthi.github.io/)",
+        "Accept":
+            "application/atom+xml",
     }
 
     request = urllib.request.Request(
@@ -92,7 +114,10 @@ def request_arxiv(query, start=0):
 
         try:
 
-            print(f"Requesting: {url}")
+            print(
+                f"Requesting page "
+                f"start={start}"
+            )
 
             with urllib.request.urlopen(
                 request,
@@ -112,38 +137,22 @@ def request_arxiv(query, start=0):
             if attempt == 4:
                 raise
 
-            time.sleep(10 * (attempt + 1))
-
-
-def day_query(day):
-
-    start = f"{day}T00:00:00Z"
-
-    end = (
-        datetime.fromisoformat(day)
-        .replace(tzinfo=timezone.utc)
-        + timedelta(days=1)
-    )
-
-    end = end.strftime("%Y-%m-%dT00:00:00Z")
-
-    return f"submittedDate:[{start} TO {end}]"
-
-
-def parse_entries(xml_data):
-
-    root = ET.fromstring(xml_data)
-
-    entries = root.findall("a:entry", NS)
-
-    return entries
+            time.sleep(
+                10 * (attempt + 1)
+            )
 
 
 def collect_day(day):
 
-    query = day_query(day)
+    query = make_query(day)
+
+    print()
+    print("Query:")
+    print(query)
+    print()
 
     total = 0
+
     category_counts = Counter()
 
     start = 0
@@ -155,7 +164,16 @@ def collect_day(day):
             start=start
         )
 
-        entries = parse_entries(xml_data)
+        root = ET.fromstring(xml_data)
+
+        entries = root.findall(
+            "a:entry",
+            NS
+        )
+
+        print(
+            f"Received {len(entries)} entries"
+        )
 
         if not entries:
             break
@@ -171,7 +189,9 @@ def collect_day(day):
 
             for category in categories:
 
-                term = category.attrib.get("term")
+                term = category.attrib.get(
+                    "term"
+                )
 
                 if term in CATEGORIES:
                     category_counts[term] += 1
@@ -181,7 +201,8 @@ def collect_day(day):
 
         start += len(entries)
 
-        time.sleep(REQUEST_DELAY)
+        # Be polite to arXiv.
+        time.sleep(3)
 
     row = {
         "date": day,
@@ -189,38 +210,50 @@ def collect_day(day):
     }
 
     for category in CATEGORIES:
-        row[category] = category_counts[category]
+
+        row[category] = category_counts[
+            category
+        ]
 
     return row
 
 
 def get_target_date():
 
-    override = os.environ.get(
+    manual_date = os.environ.get(
         "ARXIV_STATS_DATE"
     )
 
-    if override:
-        datetime.fromisoformat(override)
-        return override
+    if manual_date:
+
+        datetime.strptime(
+            manual_date,
+            "%Y-%m-%d"
+        )
+
+        return manual_date
 
     yesterday = (
         datetime.now(timezone.utc)
         - timedelta(days=1)
     )
 
-    return yesterday.date().isoformat()
+    return yesterday.strftime(
+        "%Y-%m-%d"
+    )
 
 
 def main():
 
+    print("=" * 60)
+    print("arXiv statistics collector")
+    print("=" * 60)
+
     day = get_target_date()
 
-    print("=" * 60)
-    print("arXiv statistics")
-    print("=" * 60)
-    print(f"Target date: {day}")
-    print()
+    print(
+        f"Target date: {day}"
+    )
 
     path = DATA / "daily.json"
 
@@ -234,8 +267,6 @@ def main():
         for row in rows
         if "date" in row
     }
-
-    print("Collecting data from arXiv...")
 
     row = collect_day(day)
 
@@ -252,11 +283,15 @@ def main():
     )
 
     metadata = {
+
         "description":
-            "Daily arXiv submission counts by category.",
+            "Daily arXiv submission counts.",
 
         "counting_basis":
-            "v1 submission timestamp, UTC",
+            "v1 submission timestamp",
+
+        "timezone":
+            "UTC",
 
         "categories":
             CATEGORIES,
@@ -265,7 +300,9 @@ def main():
             day,
 
         "updated_at_utc":
-            datetime.now(timezone.utc).isoformat(),
+            datetime.now(
+                timezone.utc
+            ).isoformat(),
     }
 
     save_json(
@@ -274,11 +311,16 @@ def main():
     )
 
     print()
-    print("Result:")
-    print(json.dumps(
-        row,
-        indent=2
-    ))
+    print("=" * 60)
+    print("Result")
+    print("=" * 60)
+
+    print(
+        json.dumps(
+            row,
+            indent=2
+        )
+    )
 
 
 if __name__ == "__main__":

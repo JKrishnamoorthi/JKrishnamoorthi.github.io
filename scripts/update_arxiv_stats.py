@@ -286,6 +286,8 @@ def get_target_date():
 
     if manual_date:
 
+        manual_date = manual_date.strip()
+
         datetime.strptime(
             manual_date,
             "%Y-%m-%d"

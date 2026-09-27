@@ -1,95 +1,296 @@
 #!/usr/bin/env python3
-import json, os, sys, time, urllib.parse, urllib.request
+
+import json
+import os
+import sys
+import time
+import urllib.parse
+import urllib.request
 import xml.etree.ElementTree as ET
+
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+
 API = "https://export.arxiv.org/api/query"
+
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
-CATEGORIES = ["hep-ph","hep-ex","hep-th","nucl-th","astro-ph.HE","astro-ph.CO","physics.ins-det"]
-NS = {"a": "http://www.w3.org/2005/Atom"}
-PAGE_SIZE = 200
-REQUEST_DELAY = 3.0
 
-def load(path, default):
-    if not path.exists(): return default
+CATEGORIES = [
+    "hep-ph",
+    "hep-ex",
+    "hep-th",
+    "nucl-th",
+    "astro-ph.HE",
+    "astro-ph.CO",
+    "physics.ins-det",
+]
+
+NS = {
+    "a": "http://www.w3.org/2005/Atom"
+}
+
+PAGE_SIZE = 200
+
+# arXiv asks clients to avoid excessive request rates.
+REQUEST_DELAY = 5
+
+
+def load_json(path, default):
+    if not path.exists():
+        return default
+
     try:
-        return json.loads(path.read_text())
+        with path.open("r", encoding="utf-8") as f:
+            return json.load(f)
     except Exception:
         return default
 
-def save(path, obj):
+
+def save_json(path, obj):
     path.parent.mkdir(parents=True, exist_ok=True)
+
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(obj, indent=2) + "\n")
+
+    with tmp.open("w", encoding="utf-8") as f:
+        json.dump(obj, f, indent=2)
+        f.write("\n")
+
     tmp.replace(path)
 
-def request(q, start=0):
-    params = urllib.parse.urlencode({
-        "search_query": q, "start": start, "max_results": PAGE_SIZE,
-        "sortBy": "submittedDate", "sortOrder": "ascending"
-    })
-    req = urllib.request.Request(
-        f"{API}?{params}",
-        headers={"User-Agent": "JKrishnamoorthi.github.io arXiv statistics bot"}
-    )
-    for attempt in range(5):
-        try:
-            with urllib.request.urlopen(req, timeout=60) as r:
-                return r.read()
-        except Exception:
-            if attempt == 4: raise
-            time.sleep(5 * (attempt + 1))
 
-def count(q):
-    total, start = 0, 0
+def request_arxiv(query, start=0):
+
+    params = urllib.parse.urlencode({
+        "search_query": query,
+        "start": start,
+        "max_results": PAGE_SIZE,
+        "sortBy": "submittedDate",
+        "sortOrder": "ascending",
+    })
+
+    url = f"{API}?{params}"
+
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 "
+            "(compatible; JKrishnamoorthi-ArxivStats/1.0; "
+            "+https://jkrishnamoorthi.github.io/)"
+        ),
+        "Accept": "application/atom+xml",
+    }
+
+    request = urllib.request.Request(
+        url,
+        headers=headers,
+        method="GET",
+    )
+
+    for attempt in range(5):
+
+        try:
+
+            print(f"Requesting: {url}")
+
+            with urllib.request.urlopen(
+                request,
+                timeout=120
+            ) as response:
+
+                return response.read()
+
+        except Exception as exc:
+
+            print(
+                f"Request failed "
+                f"(attempt {attempt + 1}/5): {exc}",
+                file=sys.stderr,
+            )
+
+            if attempt == 4:
+                raise
+
+            time.sleep(10 * (attempt + 1))
+
+
+def day_query(day):
+
+    start = f"{day}T00:00:00Z"
+
+    end = (
+        datetime.fromisoformat(day)
+        .replace(tzinfo=timezone.utc)
+        + timedelta(days=1)
+    )
+
+    end = end.strftime("%Y-%m-%dT00:00:00Z")
+
+    return f"submittedDate:[{start} TO {end}]"
+
+
+def parse_entries(xml_data):
+
+    root = ET.fromstring(xml_data)
+
+    entries = root.findall("a:entry", NS)
+
+    return entries
+
+
+def collect_day(day):
+
+    query = day_query(day)
+
+    total = 0
+    category_counts = Counter()
+
+    start = 0
+
     while True:
-        root = ET.fromstring(request(q, start))
-        entries = root.findall("a:entry", NS)
-        n = root.find("a:totalResults", NS)
-        known = int(n.text or 0) if n is not None else None
+
+        xml_data = request_arxiv(
+            query,
+            start=start
+        )
+
+        entries = parse_entries(xml_data)
+
+        if not entries:
+            break
+
         total += len(entries)
-        if not entries or (known is not None and start + len(entries) >= known):
-            return total
+
+        for entry in entries:
+
+            categories = entry.findall(
+                "a:category",
+                NS
+            )
+
+            for category in categories:
+
+                term = category.attrib.get("term")
+
+                if term in CATEGORIES:
+                    category_counts[term] += 1
+
+        if len(entries) < PAGE_SIZE:
+            break
+
         start += len(entries)
+
         time.sleep(REQUEST_DELAY)
 
-def day_query(day, cat=None):
-    start = f"{day}T00:00:00Z"
-    end = (datetime.fromisoformat(day).replace(tzinfo=timezone.utc) + timedelta(days=1))
-    q = f"submittedDate:[{start} TO {end.strftime('%Y-%m-%dT00:00:00Z')}]"
-    return q + (f" AND cat:{cat}" if cat else "")
+    row = {
+        "date": day,
+        "total": total,
+    }
+
+    for category in CATEGORIES:
+        row[category] = category_counts[category]
+
+    return row
+
+
+def get_target_date():
+
+    override = os.environ.get(
+        "ARXIV_STATS_DATE"
+    )
+
+    if override:
+        datetime.fromisoformat(override)
+        return override
+
+    yesterday = (
+        datetime.now(timezone.utc)
+        - timedelta(days=1)
+    )
+
+    return yesterday.date().isoformat()
+
 
 def main():
-    day = os.getenv("ARXIV_STATS_DATE") or (
-        datetime.now(timezone.utc) - timedelta(days=1)
-    ).date().isoformat()
+
+    day = get_target_date()
+
+    print("=" * 60)
+    print("arXiv statistics")
+    print("=" * 60)
+    print(f"Target date: {day}")
+    print()
 
     path = DATA / "daily.json"
-    rows = load(path, [])
-    existing = {r["date"]: r for r in rows if "date" in r}
-    row = existing.get(day, {"date": day})
 
-    print("Counting total:", day)
-    row["total"] = count(day_query(day))
-    for cat in CATEGORIES:
-        print("Counting:", cat)
-        row[cat] = count(day_query(day, cat))
+    rows = load_json(
+        path,
+        []
+    )
+
+    existing = {
+        row["date"]: row
+        for row in rows
+        if "date" in row
+    }
+
+    print("Collecting data from arXiv...")
+
+    row = collect_day(day)
 
     existing[day] = row
-    save(path, [existing[d] for d in sorted(existing)])
-    save(DATA/"metadata.json", {
-        "description": "Daily arXiv submission counts by selected category.",
-        "counting_basis": "v1 submission timestamp, UTC",
-        "categories": CATEGORIES,
-        "updated_for_date": day,
-        "updated_at_utc": datetime.now(timezone.utc).isoformat()
-    })
-    print(json.dumps(row, indent=2))
+
+    output = [
+        existing[d]
+        for d in sorted(existing)
+    ]
+
+    save_json(
+        path,
+        output
+    )
+
+    metadata = {
+        "description":
+            "Daily arXiv submission counts by category.",
+
+        "counting_basis":
+            "v1 submission timestamp, UTC",
+
+        "categories":
+            CATEGORIES,
+
+        "updated_for_date":
+            day,
+
+        "updated_at_utc":
+            datetime.now(timezone.utc).isoformat(),
+    }
+
+    save_json(
+        DATA / "metadata.json",
+        metadata
+    )
+
+    print()
+    print("Result:")
+    print(json.dumps(
+        row,
+        indent=2
+    ))
+
 
 if __name__ == "__main__":
-    try: main()
-    except Exception as e:
-        print(f"ERROR: {e}", file=sys.stderr)
+
+    try:
+        main()
+
+    except Exception as exc:
+
+        print(
+            f"ERROR: {exc}",
+            file=sys.stderr
+        )
+
         raise

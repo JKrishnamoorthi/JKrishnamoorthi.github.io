@@ -150,9 +150,10 @@ def get_day_statistics(target_date):
             url,
             headers={
                 "User-Agent": (
-                    "KrishnamoorthiJ-ArXiv-Stats/1.0 "
-                    "(GitHub Pages statistics)"
-                )
+                "KrishnamoorthiJ-ArXiv-Stats/1.0 "
+                "(GitHub Pages statistics; mailto:krishalphabet@gmail.com)"
+            ),
+            "Accept": "application/atom+xml, application/xml;q=0.9, */*;q=0.8",
             },
         )
 

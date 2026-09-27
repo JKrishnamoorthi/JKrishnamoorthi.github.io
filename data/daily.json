@@ -1,5 +1,16 @@
 [
   {
+    "date": "2026-09-22",
+    "total": 1414,
+    "hep-ph": 41,
+    "hep-ex": 18,
+    "hep-th": 26,
+    "nucl-th": 14,
+    "astro-ph.HE": 24,
+    "astro-ph.CO": 19,
+    "physics.ins-det": 6
+  },
+  {
     "date": "2026-09-23",
     "total": 1395,
     "hep-ph": 46,

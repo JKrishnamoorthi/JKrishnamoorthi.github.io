@@ -1,0 +1,5 @@
+{
+  "description": "Daily arXiv submission counts by selected category.",
+  "counting_basis": "v1 submission timestamp, UTC",
+  "note": "Initial placeholder; run the workflow to populate."
+}

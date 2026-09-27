@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>arXiv Explorer — Krishnamoorthi J</title>
+  <meta name="description" content="arXiv paper explorer and research activity dashboard by Krishnamoorthi J." />
+  <link rel="icon" href="images/favicon.png" />
+  <link rel="stylesheet" href="css/arxiv.css" />
+</head>
+
+<body>
+<header>
+  <nav>
+    <a href="index.html" class="nav-brand">Krishnamoorthi J</a>
+    <ul class="nav-links">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="research.html">Research</a></li>
+      <li><a href="publications.html">Publications</a></li>
+      <li><a href="talks.html">Talks</a></li>
+      <li><a href="contact.html">Contact</a></li>
+      <li><a href="cv/KrishnamoorthiJ_CV.pdf" class="cv-link">CV ↓</a></li>
+    </ul>
+  </nav>
+</header>
+
+<main class="container">
+  <section class="hero-small">
+    <div>
+      <p class="eyebrow">RESEARCH TOOL</p>
+      <h1>arXiv Explorer</h1>
+      <p class="lead">
+        Search recent papers, explore research activity, and keep a personal
+        reading list.
+      </p>
+    </div>
+  </section>
+
+  <section class="search-panel">
+    <div class="search-tabs" role="tablist" aria-label="Search type">
+      <button class="tab active" data-mode="keyword">Keyword</button>
+      <button class="tab" data-mode="author">Author</button>
+    </div>
+
+    <div class="search-row">
+      <label class="sr-only" for="searchInput">Search arXiv</label>
+      <input id="searchInput" type="search"
+             placeholder="e.g. neutrino oscillation, Earth tomography, NSI"
+             autocomplete="off" />
+      <button id="searchButton" class="btn btn-primary">Search arXiv</button>
+    </div>
+
+    <div class="filter-row">
+      <label>
+        Category
+        <select id="category">
+          <option value="">All categories</option>
+          <option value="hep-ph">hep-ph</option>
+          <option value="hep-ex">hep-ex</option>
+          <option value="hep-th">hep-th</option>
+          <option value="nucl-th">nucl-th</option>
+          <option value="astro-ph.HE">astro-ph.HE</option>
+          <option value="astro-ph.CO">astro-ph.CO</option>
+          <option value="physics.ins-det">physics.ins-det</option>
+          <option value="quant-ph">quant-ph</option>
+        </select>
+      </label>
+
+      <label>
+        Results
+        <select id="maxResults">
+          <option value="10">10</option>
+          <option value="20" selected>20</option>
+          <option value="50">50</option>
+        </select>
+      </label>
+
+      <button id="myFavouritesButton" class="btn btn-outline">
+        ★ My favourites
+      </button>
+    </div>
+
+    <p id="searchStatus" class="status"></p>
+  </section>
+
+  <section id="activitySection">
+    <div class="section-heading">
+      <div>
+        <h2>Daily activity</h2>
+        <p>Submission statistics can be loaded from <code>data/daily.json</code>.</p>
+      </div>
+      <select id="activityRange">
+        <option value="30">Last 30 days</option>
+        <option value="90">Last 90 days</option>
+        <option value="180">Last 6 months</option>
+        <option value="365" selected>Last year</option>
+      </select>
+    </div>
+
+    <div class="activity-card card">
+      <div id="activityChart" class="chart" aria-label="Daily arXiv activity chart"></div>
+      <div id="activityEmpty" class="empty-state">
+        <strong>No daily dataset yet.</strong>
+        <span>
+          Add <code>data/daily.json</code> later and this chart will render
+          automatically. The expected format is
+          <code>[{"date":"2026-09-01","count":1234}]</code>.
+        </span>
+      </div>
+    </div>
+
+    <div class="stat-grid">
+      <div class="stat card">
+        <span>Selected-period papers</span>
+        <strong id="periodTotal">—</strong>
+      </div>
+      <div class="stat card">
+        <span>Daily average</span>
+        <strong id="periodAverage">—</strong>
+      </div>
+      <div class="stat card">
+        <span>Peak day</span>
+        <strong id="peakDay">—</strong>
+      </div>
+      <div class="stat card">
+        <span>Weekday pattern</span>
+        <strong id="weekdayPeak">—</strong>
+      </div>
+    </div>
+  </section>
+
+  <section id="resultsSection">
+    <div class="section-heading">
+      <div>
+        <h2 id="resultsTitle">Recent papers</h2>
+        <p id="resultsSubtitle">Search arXiv to explore papers.</p>
+      </div>
+    </div>
+
+    <div id="results" class="paper-list">
+      <div class="empty-state card">
+        <strong>Start with a search.</strong>
+        <span>Try “neutrino oscillation”, “non-standard interactions”, or an author name.</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="favouritesSection" class="hidden">
+    <div class="section-heading">
+      <div>
+        <h2>My favourites</h2>
+        <p>Saved in this browser using local storage.</p>
+      </div>
+      <button id="clearFavourites" class="btn btn-outline">Clear all</button>
+    </div>
+    <div id="favourites" class="paper-list"></div>
+  </section>
+</main>
+
+<footer>
+  © <span id="year"></span> Krishnamoorthi J · Institute of Physics, Bhubaneswar<br />
+  Built with GitHub Pages · Data from arXiv
+</footer>
+
+<script src="js/arxiv.js"></script>
+</body>
+</html>

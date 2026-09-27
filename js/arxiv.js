@@ -1,17 +1,15 @@
-/*
- * arXiv Explorer
- * - Keyword / author search
- * - Browser-local favourites
- * - Optional daily activity chart from data/daily.json
- *
- * Note:
- * arXiv's API may enforce browser-origin/CORS restrictions depending on
- * deployment. If direct API requests are blocked, use the cached JSON
- * workflow described in README.md.
- */
-
 const API_URL = "https://export.arxiv.org/api/query";
 const FAV_KEY = "krishnamoorthi_arxiv_favourites_v1";
+
+const CATEGORY_LABELS = {
+  "hep-ph": "hep-ph",
+  "hep-ex": "hep-ex",
+  "hep-th": "hep-th",
+  "nucl-th": "nucl-th",
+  "astro-ph.HE": "astro-ph.HE",
+  "astro-ph.CO": "astro-ph.CO",
+  "physics.ins-det": "physics.ins-det"
+};
 
 let searchMode = "keyword";
 let papers = [];
@@ -27,7 +25,6 @@ document.addEventListener("DOMContentLoaded", () => {
       searchMode = button.dataset.mode;
       document.querySelectorAll(".tab").forEach((b) => b.classList.remove("active"));
       button.classList.add("active");
-
       $("searchInput").placeholder =
         searchMode === "author"
           ? "e.g. Sanjib Kumar Agarwalla"
@@ -53,6 +50,9 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   $("activityRange").addEventListener("change", () => renderActivity(dailyData));
+  document.querySelectorAll(".category-toggle").forEach((checkbox) => {
+    checkbox.addEventListener("change", () => renderActivity(dailyData));
+  });
 
   loadDailyData();
 });
@@ -80,33 +80,24 @@ async function runSearch() {
     });
 
     const response = await fetch(`${API_URL}?${params.toString()}`);
+    if (!response.ok) throw new Error(`arXiv returned HTTP ${response.status}`);
 
-    if (!response.ok) {
-      throw new Error(`arXiv returned HTTP ${response.status}`);
-    }
-
-    const xml = await response.text();
-    papers = parseArxivXML(xml);
-
+    papers = parseArxivXML(await response.text());
     renderPapers(papers);
+
     $("resultsTitle").textContent =
-      searchMode === "author" ? `Papers by ${query}` : `Search results`;
+      searchMode === "author" ? `Papers by ${query}` : "Search results";
     $("resultsSubtitle").textContent =
       `${papers.length} result${papers.length === 1 ? "" : "s"} · sorted by submission date`;
-
     setStatus(`Found ${papers.length} paper${papers.length === 1 ? "" : "s"}.`);
   } catch (error) {
     console.error(error);
-    setStatus(
-      "The live arXiv API could not be reached from this browser. " +
-      "You can still use the page with cached JSON data once the GitHub Actions workflow is added."
-    );
-
+    setStatus("The live arXiv API could not be reached from this browser.");
     $("results").innerHTML = `
       <div class="empty-state card">
         <strong>Search request failed.</strong>
         <span>${escapeHTML(error.message)}</span>
-        <span>Try again, or use the cached-data workflow described in README.md.</span>
+        <span>Try again later or use the cached statistics.</span>
       </div>`;
   } finally {
     $("searchButton").disabled = false;
@@ -115,18 +106,8 @@ async function runSearch() {
 
 function buildSearchQuery(query, category) {
   const escaped = query.replace(/"/g, '\\"');
-
-  let base;
-  if (searchMode === "author") {
-    base = `au:"${escaped}"`;
-  } else {
-    base = `all:"${escaped}"`;
-  }
-
-  if (category) {
-    base += ` AND cat:${category}`;
-  }
-
+  let base = searchMode === "author" ? `au:"${escaped}"` : `all:"${escaped}"`;
+  if (category) base += ` AND cat:${category}`;
   return base;
 }
 
@@ -136,8 +117,8 @@ function parseArxivXML(xmlText) {
 
   return entries.map((entry) => {
     const text = (tag) => entry.getElementsByTagName(tag)[0]?.textContent?.trim() || "";
-
     const links = [...entry.getElementsByTagName("link")];
+
     const absLink =
       links.find((l) => l.getAttribute("type") === "text/html")?.getAttribute("href") ||
       text("id");
@@ -204,7 +185,6 @@ function paperHTML(paper) {
           </div>
           <div class="paper-authors">${escapeHTML(authors)}</div>
         </div>
-
         <button class="fav-button ${saved ? "saved" : ""}"
                 data-id="${escapeAttr(paper.id)}"
                 title="${saved ? "Remove from favourites" : "Add to favourites"}"
@@ -222,9 +202,7 @@ function paperHTML(paper) {
 
       <div class="paper-actions">
         <a href="${escapeAttr(paper.absLink)}" target="_blank" rel="noopener">Abstract ↗</a>
-        ${paper.pdfLink
-          ? `<a href="${escapeAttr(paper.pdfLink)}" target="_blank" rel="noopener">PDF ↗</a>`
-          : ""}
+        ${paper.pdfLink ? `<a href="${escapeAttr(paper.pdfLink)}" target="_blank" rel="noopener">PDF ↗</a>` : ""}
         <button class="copy-id" data-id="${escapeAttr(paper.id)}">Copy arXiv ID</button>
       </div>
     </article>`;
@@ -252,11 +230,9 @@ function toggleFavourite(paper) {
   let favourites = getFavourites();
   const exists = favourites.some((p) => p.id === paper.id);
 
-  if (exists) {
-    favourites = favourites.filter((p) => p.id !== paper.id);
-  } else {
-    favourites.unshift(paper);
-  }
+  favourites = exists
+    ? favourites.filter((p) => p.id !== paper.id)
+    : [paper, ...favourites];
 
   localStorage.setItem(FAV_KEY, JSON.stringify(favourites));
   renderCurrentResults();
@@ -272,9 +248,9 @@ function getFavourites() {
 }
 
 function renderFavourites() {
-  const favourites = getFavourites();
   const container = $("favouritesSection");
   const list = $("favourites");
+  const favourites = getFavourites();
 
   if (!favourites.length) {
     list.innerHTML = `
@@ -285,6 +261,7 @@ function renderFavourites() {
     return;
   }
 
+  container.classList.remove("hidden");
   list.innerHTML = favourites.map(paperHTML).join("");
   bindFavouriteButtons();
 }
@@ -295,17 +272,24 @@ async function loadDailyData() {
     if (!response.ok) throw new Error("daily.json not found");
     dailyData = await response.json();
     renderActivity(dailyData);
-  } catch {
+  } catch (error) {
+    console.error(error);
     $("activityChart").innerHTML = "";
     $("activityEmpty").style.display = "flex";
   }
 }
 
+function getSelectedCategories() {
+  return [...document.querySelectorAll(".category-toggle:checked")]
+    .map((checkbox) => checkbox.value);
+}
+
 function renderActivity(data) {
   const empty = $("activityEmpty");
   const chart = $("activityChart");
+  const selected = getSelectedCategories();
 
-  if (!data || !data.length) {
+  if (!data || !data.length || !selected.length) {
     chart.innerHTML = "";
     empty.style.display = "flex";
     return;
@@ -315,7 +299,7 @@ function renderActivity(data) {
 
   const days = Number($("activityRange").value);
   const rows = data
-    .filter((d) => d.date && Number.isFinite(Number(d.count)))
+    .filter((d) => d.date)
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(-days);
 
@@ -325,82 +309,119 @@ function renderActivity(data) {
     return;
   }
 
-  const counts = rows.map((r) => Number(r.count));
-  const max = Math.max(...counts, 1);
-  const min = Math.min(...counts, 0);
-
   const width = 900;
-  const height = 260;
-  const left = 48;
-  const right = 12;
-  const top = 15;
-  const bottom = 35;
+  const height = 320;
+  const left = 55;
+  const right = 20;
+  const top = 35;
+  const bottom = 45;
   const plotW = width - left - right;
   const plotH = height - top - bottom;
 
-  const x = (i) => left + (rows.length === 1 ? plotW / 2 : i * plotW / (rows.length - 1));
-  const y = (v) => top + plotH - ((v - min) / Math.max(max - min, 1)) * plotH;
+  const values = rows.flatMap((row) =>
+    selected.map((category) => Number(row[category]) || 0)
+  );
+  const max = Math.max(...values, 1);
 
-  const points = rows.map((r, i) => `${x(i).toFixed(1)},${y(Number(r.count)).toFixed(1)}`).join(" ");
-  const areaPoints =
-    `${left},${top + plotH} ${points} ${x(rows.length - 1)},${top + plotH}`;
+  const x = (i) => left + (rows.length === 1 ? plotW / 2 : i * plotW / (rows.length - 1));
+  const y = (value) => top + plotH - (value / max) * plotH;
 
   const grid = [0, 0.25, 0.5, 0.75, 1].map((f) => {
     const yy = top + plotH * (1 - f);
-    const value = Math.round(min + (max - min) * f);
-    return `<line class="grid" x1="${left}" x2="${width - right}" y1="${yy}" y2="${yy}"/>
-            <text x="${left - 7}" y="${yy + 4}" text-anchor="end">${value}</text>`;
+    const value = Math.round(max * f);
+    return `
+      <line class="grid" x1="${left}" x2="${width - right}" y1="${yy}" y2="${yy}"></line>
+      <text x="${left - 8}" y="${yy + 4}" text-anchor="end">${value.toLocaleString()}</text>`;
+  }).join("");
+
+  const seriesSVG = selected.map((category) => {
+    const points = rows.map((row, i) =>
+      `${x(i).toFixed(1)},${y(Number(row[category]) || 0).toFixed(1)}`
+    ).join(" ");
+
+    const circles = rows.map((row, i) => {
+      const value = Number(row[category]) || 0;
+      return `
+        <circle class="category-point ${categoryClass(category)}"
+                cx="${x(i)}" cy="${y(value)}" r="2.8">
+          <title>${CATEGORY_LABELS[category]} · ${formatDate(row.date)}: ${value.toLocaleString()}</title>
+        </circle>`;
+    }).join("");
+
+    return `
+      <polyline class="category-line ${categoryClass(category)}" points="${points}"></polyline>
+      ${circles}`;
   }).join("");
 
   const labelIndexes = uniqueLabelIndexes(rows.length);
   const labels = labelIndexes.map((i) => `
-    <text x="${x(i)}" y="${height - 9}" text-anchor="middle">${formatShortDate(rows[i].date)}</text>
+    <text x="${x(i)}" y="${height - 12}" text-anchor="middle">${formatShortDate(rows[i].date)}</text>
+  `).join("");
+
+  const legend = selected.map((category) => `
+    <span class="chart-legend-item">
+      <span class="legend-dot ${categoryClass(category)}"></span>
+      ${CATEGORY_LABELS[category]}
+    </span>
   `).join("");
 
   chart.innerHTML = `
-    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Daily arXiv submissions">
+    <div class="chart-legend">${legend}</div>
+    <svg viewBox="0 0 ${width} ${height}" role="img"
+         aria-label="Daily HEP and astrophysics arXiv activity">
       ${grid}
-      <polygon class="area" points="${areaPoints}"></polygon>
-      <polyline class="line" points="${points}"></polyline>
+      ${seriesSVG}
       ${labels}
     </svg>`;
 
-  const total = counts.reduce((a, b) => a + b, 0);
-  const avg = total / counts.length;
-  const peakIndex = counts.indexOf(Math.max(...counts));
+  updateActivityStats(rows, selected);
+}
+
+function updateActivityStats(rows, selected) {
+  const dailyTotals = rows.map((row) =>
+    selected.reduce((sum, category) => sum + (Number(row[category]) || 0), 0)
+  );
+
+  const total = dailyTotals.reduce((a, b) => a + b, 0);
+  const avg = dailyTotals.length ? total / dailyTotals.length : 0;
+
+  const categoryTotals = selected.map((category) => [
+    category,
+    rows.reduce((sum, row) => sum + (Number(row[category]) || 0), 0)
+  ]).sort((a, b) => b[1] - a[1]);
 
   $("periodTotal").textContent = total.toLocaleString();
   $("periodAverage").textContent = Math.round(avg).toLocaleString();
-  $("peakDay").textContent =
-    `${Math.max(...counts).toLocaleString()} · ${formatDate(rows[peakIndex].date)}`;
+  $("peakDay").textContent = categoryTotals.length
+    ? `${CATEGORY_LABELS[categoryTotals[0][0]]} · ${categoryTotals[0][1].toLocaleString()}`
+    : "—";
 
   const weekdays = {};
-  rows.forEach((r) => {
-    const d = new Date(`${r.date}T12:00:00`);
-    const day = d.toLocaleDateString(undefined, { weekday: "long" });
-    if (!weekdays[day]) weekdays[day] = [];
-    weekdays[day].push(Number(r.count));
+  rows.forEach((row) => {
+    const day = new Date(`${row.date}T12:00:00`).toLocaleDateString(undefined, { weekday: "long" });
+    const value = selected.reduce((sum, category) => sum + (Number(row[category]) || 0), 0);
+    (weekdays[day] ||= []).push(value);
   });
 
   const weekdayAverage = Object.entries(weekdays)
     .map(([day, values]) => [day, values.reduce((a, b) => a + b, 0) / values.length])
     .sort((a, b) => b[1] - a[1]);
 
-  $("weekdayPeak").textContent =
-    weekdayAverage.length ? weekdayAverage[0][0] : "—";
+  $("weekdayPeak").textContent = weekdayAverage.length ? weekdayAverage[0][0] : "—";
+}
+
+function categoryClass(category) {
+  return "cat-" + category.replace(/\./g, "-").replace(/[^a-zA-Z0-9_-]/g, "");
 }
 
 function uniqueLabelIndexes(n) {
   if (n <= 6) return Array.from({ length: n }, (_, i) => i);
   const count = 6;
-  return Array.from({ length: count }, (_, i) =>
-    Math.round(i * (n - 1) / (count - 1))
-  );
+  return Array.from({ length: count }, (_, i) => Math.round(i * (n - 1) / (count - 1)));
 }
 
 function findPaper(id) {
-  return papers.find((p) => p.id === id) ||
-    getFavourites().find((p) => p.id === id);
+  return papers.find((p) => p.id === id) || getFavourites().find((p) => p.id === id);
 }
 
 function setStatus(message) {
@@ -415,16 +436,11 @@ function formatDate(value) {
   if (!value) return "";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric"
-  });
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
 function formatShortDate(value) {
-  const d = new Date(`${value}T12:00:00`);
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return new Date(`${value}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function escapeHTML(value) {

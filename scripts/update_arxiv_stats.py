@@ -102,6 +102,12 @@ def request_arxiv(query, start=0):
             "(https://jkrishnamoorthi.github.io/)",
         "Accept":
             "application/atom+xml",
+        "Accept-Language":
+            "en-US,en;q=0.9",
+        "Accept-Encoding":
+            "gzip, deflate",
+        "Connection":
+            "keep-alive",
     }
 
     request = urllib.request.Request(
@@ -110,13 +116,16 @@ def request_arxiv(query, start=0):
         method="GET",
     )
 
-    for attempt in range(5):
+    max_attempts = 8
+
+    for attempt in range(max_attempts):
 
         try:
 
             print(
                 f"Requesting page "
-                f"start={start}"
+                f"start={start} "
+                f"(attempt {attempt + 1}/{max_attempts})"
             )
 
             with urllib.request.urlopen(
@@ -126,15 +135,66 @@ def request_arxiv(query, start=0):
 
                 return response.read()
 
+        except urllib.error.HTTPError as exc:
+
+            # arXiv's edge has recently started returning 406
+            # (and sometimes 403) as a load-shedding/throttle
+            # signal against cloud/CI egress IPs, rather than
+            # a genuine content-negotiation failure. Treat it
+            # like 429/503 and retry with a long, growing
+            # backoff instead of failing fast.
+            body = ""
+
+            try:
+                body = exc.read().decode(
+                    "utf-8",
+                    errors="replace"
+                )[:500]
+            except Exception:
+                pass
+
+            print(
+                f"Request failed "
+                f"(attempt {attempt + 1}/{max_attempts}): "
+                f"HTTP {exc.code} {exc.reason}",
+                file=sys.stderr,
+            )
+
+            if body:
+                print(
+                    f"Response body (truncated): {body}",
+                    file=sys.stderr,
+                )
+
+            if attempt == max_attempts - 1:
+                raise
+
+            if exc.code in (403, 406, 429, 503):
+                # Longer, steeper backoff for throttle-like
+                # responses: 20, 40, 80, ... seconds, capped.
+                delay = min(
+                    20 * (2 ** attempt),
+                    300
+                )
+            else:
+                delay = 10 * (attempt + 1)
+
+            print(
+                f"Sleeping {delay}s before retrying...",
+                file=sys.stderr,
+            )
+
+            time.sleep(delay)
+
         except Exception as exc:
 
             print(
                 f"Request failed "
-                f"(attempt {attempt + 1}/5): {exc}",
+                f"(attempt {attempt + 1}/{max_attempts}): {exc}",
                 file=sys.stderr,
             )
 
-            if attempt == 4:
+            if attempt == max_attempts - 1:
                 raise
 
             time.sleep(

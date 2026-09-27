@@ -1,5 +1,16 @@
 {
-  "description": "Daily arXiv submission counts by selected category.",
-  "counting_basis": "v1 submission timestamp, UTC",
-  "note": "Initial placeholder; run the workflow to populate."
+  "description": "Daily arXiv submission counts.",
+  "counting_basis": "v1 submission timestamp",
+  "timezone": "UTC",
+  "categories": [
+    "hep-ph",
+    "hep-ex",
+    "hep-th",
+    "nucl-th",
+    "astro-ph.HE",
+    "astro-ph.CO",
+    "physics.ins-det"
+  ],
+  "updated_for_date": "2026-09-24",
+  "updated_at_utc": "2026-09-27T16:35:08.123264+00:00"
 }

@@ -133,12 +133,15 @@ def fetch_arxiv(search_query, target_date, max_results=1):
     the same request will be rejected again. On 429/5xx the request is
     retried with increasing delays.
     """
+    # Keep ':' '[' ']' '(' ')' '*' literal (as in the curl requests that
+    # work) instead of percent-encoding them; spaces become '+'.
     params = urllib.parse.urlencode(
         {
             "search_query": search_query,
             "start": "0",
             "max_results": str(max_results),
-        }
+        },
+        safe=":[]()*",
     )
 
     last_error = None
@@ -162,6 +165,15 @@ def fetch_arxiv(search_query, target_date, max_results=1):
                 f"(attempt {attempt}/{MAX_RETRIES}, host={base}, "
                 f"profile={(attempt - 1) % len(HEADER_PROFILES)})"
             )
+
+            if attempt == 1:
+                try:
+                    body = exc.read().decode("utf-8", "replace")[:300]
+                except Exception:
+                    body = ""
+                print(f"    request url: {url}")
+                print(f"    response body: {body!r}")
+                print(f"    response headers: {dict(exc.headers)}")
 
             if exc.code not in RETRYABLE:
                 raise RuntimeError(
@@ -240,6 +252,15 @@ def get_day_statistics(target_date):
         counts[category] = get_total_results(query, target_date)
         time.sleep(REQUEST_DELAY)
 
+    if total == 0 and any(counts.values()):
+        union = "(" + " OR ".join(f"cat:{c}" for c in CATEGORIES) + ")"
+        total = get_total_results(f"{union} AND {date_range}", target_date)
+        time.sleep(REQUEST_DELAY)
+        print(
+            "  NOTE: date-only query returned 0, so 'total' is the number "
+            "of papers in the tracked categories (deduplicated)."
+        )
+
     result = {"date": target_date.isoformat(), "total": total}
     result.update(counts)
 
@@ -301,6 +322,20 @@ def main():
     print("\nDates to process:")
     for d in requested_dates:
         print(f"  {d}")
+
+    # Trivial query that works from a normal machine. If this fails,
+    # arXiv is rejecting this host/IP, not our date query.
+    print("\nPreflight check (cat:hep-ph, 1 result)...")
+    try:
+        get_total_results("cat:hep-ph", "preflight")
+        print("  Preflight OK")
+    except RuntimeError as exc:
+        print(f"  Preflight FAILED: {exc}")
+        print(
+            "  arXiv rejects even a trivial query from this machine; "
+            "this points to an IP-level block (e.g. GitHub runner)."
+        )
+        sys.exit(1)
 
     daily_data = load_daily_data()
 

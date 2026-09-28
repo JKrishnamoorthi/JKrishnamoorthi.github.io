@@ -2,6 +2,7 @@
 
 import json
 import os
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -11,7 +12,11 @@ from datetime import date, timedelta
 from pathlib import Path
 
 
-API_URL = "https://export.arxiv.org/api/query"
+# Tried in order; on a 406/403 the next host is used.
+API_URLS = [
+    "https://export.arxiv.org/api/query",
+    "https://arxiv.org/api/query",
+]
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 DAILY_FILE = DATA_DIR / "daily.json"
@@ -27,20 +32,44 @@ CATEGORIES = [
     "physics.ins-det",
 ]
 
-PAGE_SIZE = 100
-
-# Delay between arXiv API requests.
+# Delay between arXiv API requests (arXiv asks for >= 3 s).
 REQUEST_DELAY = 3.0
 
 # Number of attempts for a failed request.
-MAX_RETRIES = 4
+MAX_RETRIES = 6
 
+OPENSEARCH_NS = "http://a9.com/-/spec/opensearch/1.1/"
 
-# A descriptive User-Agent is important when accessing arXiv.
 USER_AGENT = (
     "JKrishnamoorthi.github.io arXiv statistics updater "
-    "(https://jkrishnamoorthi.github.io/)"
+    "(https://jkrishnamoorthi.github.io/; "
+    "https://github.com/JKrishnamoorthi)"
 )
+
+# Header profiles tried in rotation when the server answers 406.
+# A 406 means the server disliked our Accept / Accept-Encoding /
+# User-Agent, so retrying the identical request is pointless.
+HEADER_PROFILES = [
+    {
+        "User-Agent": USER_AGENT,
+        "Accept": "application/atom+xml, application/xml;q=0.9, */*;q=0.8",
+    },
+    {
+        "User-Agent": USER_AGENT,
+        "Accept": "*/*",
+    },
+    {
+        "User-Agent": "Mozilla/5.0 (compatible; " + USER_AGENT + ")",
+        "Accept": "*/*",
+    },
+    {
+        "User-Agent": "curl/8.5.0",
+        "Accept": "*/*",
+    },
+]
+
+# Statuses worth retrying (with backoff / different headers).
+RETRYABLE = {403, 406, 429, 500, 502, 503, 504}
 
 
 def parse_date(value):
@@ -52,290 +81,171 @@ def get_requested_dates():
     """
     Supported modes:
 
-    1. Single date:
-       ARXIV_STATS_DATE=2026-09-23
-
-    2. Date range:
-       ARXIV_STATS_START=2026-09-01
-       ARXIV_STATS_END=2026-09-23
-
-    3. No environment variables:
-       defaults to yesterday.
+    1. Single date:   ARXIV_STATS_DATE=2026-09-23
+    2. Date range:    ARXIV_STATS_START=... ARXIV_STATS_END=...
+    3. Nothing set:   defaults to yesterday.
     """
-
     single_date = os.environ.get("ARXIV_STATS_DATE", "").strip()
     start_date = os.environ.get("ARXIV_STATS_START", "").strip()
     end_date = os.environ.get("ARXIV_STATS_END", "").strip()
 
-    # Single-date mode
     if single_date:
         if start_date or end_date:
             raise ValueError(
                 "Use either ARXIV_STATS_DATE or "
                 "ARXIV_STATS_START/ARXIV_STATS_END, not both."
             )
-
         return [parse_date(single_date)]
 
-    # Range mode
     if start_date or end_date:
         if not start_date or not end_date:
             raise ValueError(
                 "Both ARXIV_STATS_START and ARXIV_STATS_END "
                 "must be provided for range mode."
             )
-
         start = parse_date(start_date)
         end = parse_date(end_date)
-
         if start > end:
             raise ValueError(
                 f"ARXIV_STATS_START ({start}) is after "
                 f"ARXIV_STATS_END ({end})."
             )
-
         dates = []
         current = start
-
         while current <= end:
             dates.append(current)
             current += timedelta(days=1)
-
         return dates
 
-    # Default: yesterday
-    yesterday = date.today() - timedelta(days=1)
-
-    return [yesterday]
+    return [date.today() - timedelta(days=1)]
 
 
 def arxiv_date_string(d):
-    """
-    arXiv API date format.
-
-    Example:
-    2026-09-23 -> 202609230000
-    """
+    """2026-09-23 -> 202609230000"""
     return d.strftime("%Y%m%d0000")
 
 
-def fetch_arxiv(url, target_date):
+def fetch_arxiv(search_query, target_date, max_results=1):
     """
-    Fetch data from arXiv with retries.
+    Query the arXiv API with retries.
 
-    arXiv can temporarily reject automated requests.
-    We retry common transient HTTP errors with increasing delays.
+    On 406/403 the header profile and API host are rotated, because
+    the same request will be rejected again. On 429/5xx the request is
+    retried with increasing delays.
     """
-
-    headers = {
-        "User-Agent": USER_AGENT,
-        "Accept": "application/atom+xml",
-        "Accept-Encoding": "identity",
-        "Connection": "close",
-    }
-
-    request = urllib.request.Request(
-        url,
-        headers=headers,
-        method="GET",
+    params = urllib.parse.urlencode(
+        {
+            "search_query": search_query,
+            "start": "0",
+            "max_results": str(max_results),
+        }
     )
 
-    retryable_errors = {
-        406,
-        429,
-        500,
-        502,
-        503,
-        504,
-    }
+    last_error = None
 
     for attempt in range(1, MAX_RETRIES + 1):
+        # Rotate through header profiles and hosts on each attempt.
+        headers = HEADER_PROFILES[(attempt - 1) % len(HEADER_PROFILES)]
+        base = API_URLS[(attempt - 1) % len(API_URLS)]
+        url = f"{base}?{params}"
+
+        request = urllib.request.Request(url, headers=headers, method="GET")
 
         try:
-            with urllib.request.urlopen(
-                request,
-                timeout=60,
-            ) as response:
-
+            with urllib.request.urlopen(request, timeout=60) as response:
                 return response.read()
 
         except urllib.error.HTTPError as exc:
-
+            last_error = f"HTTP {exc.code} {exc.reason}"
             print(
                 f"  arXiv HTTP error {exc.code} "
-                f"(attempt {attempt}/{MAX_RETRIES})"
+                f"(attempt {attempt}/{MAX_RETRIES}, host={base}, "
+                f"profile={(attempt - 1) % len(HEADER_PROFILES)})"
             )
 
-            if exc.code not in retryable_errors:
+            if exc.code not in RETRYABLE:
                 raise RuntimeError(
-                    f"Failed to query arXiv for {target_date}: "
-                    f"HTTP {exc.code} {exc.reason}"
+                    f"Failed to query arXiv for {target_date}: {last_error}"
                 ) from exc
 
-            if attempt == MAX_RETRIES:
-                raise RuntimeError(
-                    f"Failed to query arXiv for {target_date} "
-                    f"after {MAX_RETRIES} attempts: "
-                    f"HTTP {exc.code} {exc.reason}"
-                ) from exc
+        except (urllib.error.URLError, TimeoutError) as exc:
+            last_error = str(exc)
+            print(
+                f"  Network error (attempt {attempt}/{MAX_RETRIES}): {exc}"
+            )
 
-            # Increasing delay between retries.
+        if attempt < MAX_RETRIES:
             delay = 5 * attempt
-
-            print(
-                f"  Retrying in {delay} seconds..."
-            )
-
-            time.sleep(delay)
-
-        except (
-            urllib.error.URLError,
-            TimeoutError,
-        ) as exc:
-
-            print(
-                f"  Network error "
-                f"(attempt {attempt}/{MAX_RETRIES}): {exc}"
-            )
-
-            if attempt == MAX_RETRIES:
-                raise RuntimeError(
-                    f"Failed to query arXiv for {target_date} "
-                    f"after {MAX_RETRIES} attempts: {exc}"
-                ) from exc
-
-            delay = 5 * attempt
-
-            print(
-                f"  Retrying in {delay} seconds..."
-            )
-
+            print(f"  Retrying in {delay} seconds...")
             time.sleep(delay)
 
     raise RuntimeError(
-        f"Failed to query arXiv for {target_date}."
+        f"Failed to query arXiv for {target_date} "
+        f"after {MAX_RETRIES} attempts: {last_error}"
     )
+
+
+def get_total_results(search_query, target_date):
+    """
+    Return the number of matching papers using opensearch:totalResults.
+
+    Only one entry is requested, so no pagination is needed.
+    """
+    xml_data = fetch_arxiv(search_query, target_date, max_results=1)
+
+    try:
+        root = ET.fromstring(xml_data)
+    except ET.ParseError as exc:
+        raise RuntimeError(
+            f"Could not parse arXiv response for {target_date}: {exc}"
+        ) from exc
+
+    node = root.find(f"{{{OPENSEARCH_NS}}}totalResults")
+    if node is None or node.text is None:
+        raise RuntimeError(
+            f"arXiv response for {target_date} has no totalResults field."
+        )
+
+    return int(node.text.strip())
 
 
 def get_day_statistics(target_date):
     """
-    Query arXiv for all submissions on target_date and count
-    papers belonging to each selected category.
+    Count arXiv submissions on target_date, overall and per category.
 
-    Cross-listed papers can contribute to more than one category.
+    Cross-listed papers count towards every category they appear in
+    (same behaviour as matching against each entry's category terms).
     """
-
     next_date = target_date + timedelta(days=1)
-
-    start_string = arxiv_date_string(target_date)
-    end_string = arxiv_date_string(next_date)
-
-    query = (
-        f"submittedDate:[{start_string} TO {end_string}]"
+    date_range = (
+        f"submittedDate:[{arxiv_date_string(target_date)} "
+        f"TO {arxiv_date_string(next_date)}]"
     )
 
     print(f"\nProcessing {target_date}")
-    print(f"Query: {query}")
+    print(f"Date filter: {date_range}")
 
-    counts = {
-        category: 0
-        for category in CATEGORIES
-    }
-
-    total = 0
-    start = 0
-
-    while True:
-
-        params = {
-            "search_query": query,
-            "start": str(start),
-            "max_results": str(PAGE_SIZE),
-            "sortBy": "submittedDate",
-            "sortOrder": "ascending",
-        }
-
-        url = (
-            API_URL
-            + "?"
-            + urllib.parse.urlencode(params)
-        )
-
+    if target_date >= date.today():
         print(
-            f"  Fetching records "
-            f"{start} - {start + PAGE_SIZE - 1}"
+            "  WARNING: this date is not finished yet (UTC); "
+            "counts will be incomplete."
         )
 
-        xml_data = fetch_arxiv(
-            url,
-            target_date,
-        )
+    total = get_total_results(date_range, target_date)
+    time.sleep(REQUEST_DELAY)
 
-        try:
-            root = ET.fromstring(xml_data)
-
-        except ET.ParseError as exc:
-            raise RuntimeError(
-                f"Could not parse arXiv response for "
-                f"{target_date}: {exc}"
-            ) from exc
-
-        namespace = {
-            "atom": "http://www.w3.org/2005/Atom",
-            "arxiv": "http://arxiv.org/schemas/atom",
-        }
-
-        entries = root.findall(
-            "atom:entry",
-            namespace,
-        )
-
-        if not entries:
-            break
-
-        for entry in entries:
-
-            total += 1
-
-            categories = {
-                category.attrib.get("term")
-                for category in entry.findall(
-                    "atom:category",
-                    namespace,
-                )
-            }
-
-            for category in CATEGORIES:
-
-                if category in categories:
-                    counts[category] += 1
-
-        # If fewer than PAGE_SIZE entries were returned,
-        # this was the final page.
-        if len(entries) < PAGE_SIZE:
-            break
-
-        start += PAGE_SIZE
-
-        # Respect arXiv API request rate.
+    counts = {}
+    for category in CATEGORIES:
+        query = f"cat:{category} AND {date_range}"
+        counts[category] = get_total_results(query, target_date)
         time.sleep(REQUEST_DELAY)
 
-    result = {
-        "date": target_date.isoformat(),
-        "total": total,
-    }
-
+    result = {"date": target_date.isoformat(), "total": total}
     result.update(counts)
 
-    print(
-        f"  Total submissions: {total}"
-    )
-
+    print(f"  Total submissions: {total}")
     for category in CATEGORIES:
-        print(
-            f"  {category:15s}: "
-            f"{counts[category]}"
-        )
+        print(f"  {category:15s}: {counts[category]}")
 
     return result
 
@@ -345,49 +255,24 @@ def load_daily_data():
         return []
 
     try:
-        with DAILY_FILE.open(
-            "r",
-            encoding="utf-8",
-        ) as f:
-
+        with DAILY_FILE.open("r", encoding="utf-8") as f:
             data = json.load(f)
 
         if not isinstance(data, list):
-            raise ValueError(
-                "daily.json must contain a JSON list."
-            )
+            raise ValueError("daily.json must contain a JSON list.")
 
         return data
 
     except json.JSONDecodeError as exc:
-
-        raise RuntimeError(
-            f"Could not parse {DAILY_FILE}: {exc}"
-        ) from exc
+        raise RuntimeError(f"Could not parse {DAILY_FILE}: {exc}") from exc
 
 
 def save_daily_data(data):
-    DATA_DIR.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    data.sort(key=lambda row: row["date"])
 
-    data.sort(
-        key=lambda row: row["date"]
-    )
-
-    with DAILY_FILE.open(
-        "w",
-        encoding="utf-8",
-    ) as f:
-
-        json.dump(
-            data,
-            f,
-            indent=2,
-            ensure_ascii=False,
-        )
-
+    with DAILY_FILE.open("w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
         f.write("\n")
 
 
@@ -401,23 +286,12 @@ def save_metadata():
         ),
     }
 
-    with METADATA_FILE.open(
-        "w",
-        encoding="utf-8",
-    ) as f:
-
-        json.dump(
-            metadata,
-            f,
-            indent=2,
-            ensure_ascii=False,
-        )
-
+    with METADATA_FILE.open("w", encoding="utf-8") as f:
+        json.dump(metadata, f, indent=2, ensure_ascii=False)
         f.write("\n")
 
 
 def main():
-
     requested_dates = get_requested_dates()
 
     print("=" * 60)
@@ -425,64 +299,51 @@ def main():
     print("=" * 60)
 
     print("\nDates to process:")
-
     for d in requested_dates:
         print(f"  {d}")
 
     daily_data = load_daily_data()
 
-    # Convert existing entries into a dictionary so that
-    # dates are replaced rather than duplicated.
+    # Dict keyed by date so entries are replaced, not duplicated.
     existing = {
         row["date"]: row
         for row in daily_data
-        if isinstance(row, dict)
-        and "date" in row
+        if isinstance(row, dict) and "date" in row
     }
 
-    for index, target_date in enumerate(
-        requested_dates
-    ):
+    failed = []
 
-        result = get_day_statistics(
-            target_date
-        )
+    for index, target_date in enumerate(requested_dates):
+        try:
+            result = get_day_statistics(target_date)
+            existing[result["date"]] = result
+        except RuntimeError as exc:
+            # Keep going so one bad day doesn't discard the others.
+            print(f"  ERROR: {exc}")
+            failed.append(target_date)
 
-        # Replace existing value for this date.
-        existing[result["date"]] = result
-
-        # Avoid unnecessary delay after the final date.
         if index < len(requested_dates) - 1:
             time.sleep(REQUEST_DELAY)
 
-    updated_data = list(
-        existing.values()
-    )
+    updated_data = list(existing.values())
 
-    save_daily_data(
-        updated_data
-    )
+    if updated_data:
+        save_daily_data(updated_data)
+        save_metadata()
 
-    save_metadata()
+    print("\n" + "=" * 60)
+    print("Done." if not failed else "Done with errors.")
+    print(f"Updated: {DAILY_FILE}")
+    print(f"Total dates in database: {len(updated_data)}")
 
-    print(
-        "\n" + "=" * 60
-    )
+    if failed:
+        print("Failed dates: " + ", ".join(d.isoformat() for d in failed))
 
-    print("Done.")
+    print("=" * 60)
 
-    print(
-        f"Updated: {DAILY_FILE}"
-    )
-
-    print(
-        f"Total dates in database: "
-        f"{len(updated_data)}"
-    )
-
-    print(
-        "=" * 60
-    )
+    # Non-zero exit so the workflow still shows the failure.
+    if failed:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

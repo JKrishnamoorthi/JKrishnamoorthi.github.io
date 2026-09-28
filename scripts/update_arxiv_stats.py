@@ -1,35 +1,22 @@
 #!/usr/bin/env python3
-"""
-Daily arXiv submission counts for selected categories.
 
-Request handling follows the version that ran successfully on GitHub
-Actions (bot commit 1e2086f): one honest User-Agent, plain paging over
-the date query, and a LONG exponential backoff, because arXiv's edge
-answers 406/403/429/503 to CI egress IPs as a throttle signal. Short
-retries (a few seconds) never outlast it.
-"""
-
-import gzip
 import json
 import os
-import sys
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
-import xml.etree.ElementTree as ET
-import zlib
-from collections import Counter
-from datetime import datetime, timedelta, timezone
+from datetime import date, timedelta
 from pathlib import Path
 
+import arxiv
 
-API = "https://export.arxiv.org/api/query"
 
-ROOT = Path(__file__).resolve().parents[1]
-DATA = ROOT / "data"
-DAILY_FILE = DATA / "daily.json"
-METADATA_FILE = DATA / "metadata.json"
+# ============================================================
+# Configuration
+# ============================================================
+
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+
+DAILY_FILE = DATA_DIR / "daily.json"
+METADATA_FILE = DATA_DIR / "metadata.json"
 
 CATEGORIES = [
     "hep-ph",
@@ -41,300 +28,401 @@ CATEGORIES = [
     "physics.ins-det",
 ]
 
-NS = {"a": "http://www.w3.org/2005/Atom"}
-
+# arXiv API client settings
 PAGE_SIZE = 100
-REQUEST_DELAY = 3.0          # polite delay between pages / days
-
-MAX_ATTEMPTS = 8
-BACKOFF_CAP = 300            # seconds
-THROTTLE_CODES = (403, 406, 429, 503)
-
-HEADERS = {
-    "User-Agent": (
-        "JKrishnamoorthi-arxiv-dashboard/1.0 "
-        "(https://jkrishnamoorthi.github.io/)"
-    ),
-    "Accept": "application/atom+xml",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate",
-    "Connection": "keep-alive",
-}
+REQUEST_DELAY = 3.0
+NUM_RETRIES = 5
 
 
-# ---------------------------------------------------------------- dates
+# ============================================================
+# Date handling
+# ============================================================
 
-def utc_today():
-    return datetime.now(timezone.utc).date()
-
-
-def parse_day(value):
-    return datetime.strptime(value.strip(), "%Y-%m-%d").date()
+def parse_date(value):
+    """Parse a date in YYYY-MM-DD format."""
+    return date.fromisoformat(value)
 
 
 def get_requested_dates():
     """
-    ARXIV_STATS_DATE=2026-09-24                       single day
-    ARXIV_STATS_START=... and ARXIV_STATS_END=...     inclusive range
-    nothing set                                       yesterday (UTC)
+    Supported modes:
+
+    1. Single date:
+       ARXIV_STATS_DATE=2026-09-23
+
+    2. Date range:
+       ARXIV_STATS_START=2026-09-01
+       ARXIV_STATS_END=2026-09-23
+
+    3. No environment variables:
+       defaults to yesterday.
     """
-    single = os.environ.get("ARXIV_STATS_DATE", "").strip()
-    start = os.environ.get("ARXIV_STATS_START", "").strip()
-    end = os.environ.get("ARXIV_STATS_END", "").strip()
 
-    if single:
-        if start or end:
+    single_date = os.environ.get(
+        "ARXIV_STATS_DATE", ""
+    ).strip()
+
+    start_date = os.environ.get(
+        "ARXIV_STATS_START", ""
+    ).strip()
+
+    end_date = os.environ.get(
+        "ARXIV_STATS_END", ""
+    ).strip()
+
+    # --------------------------------------------------------
+    # Single-date mode
+    # --------------------------------------------------------
+
+    if single_date:
+
+        if start_date or end_date:
             raise ValueError(
-                "Use either ARXIV_STATS_DATE or START/END, not both."
+                "Use either ARXIV_STATS_DATE or "
+                "ARXIV_STATS_START/ARXIV_STATS_END, "
+                "not both."
             )
-        return [parse_day(single)]
 
-    if start or end:
-        if not (start and end):
-            raise ValueError("Both ARXIV_STATS_START and ARXIV_STATS_END needed.")
-        first, last = parse_day(start), parse_day(end)
-        if first > last:
-            raise ValueError(f"START ({first}) is after END ({last}).")
-        days = []
-        current = first
-        while current <= last:
-            days.append(current)
+        return [parse_date(single_date)]
+
+    # --------------------------------------------------------
+    # Range mode
+    # --------------------------------------------------------
+
+    if start_date or end_date:
+
+        if not start_date or not end_date:
+            raise ValueError(
+                "Both ARXIV_STATS_START and ARXIV_STATS_END "
+                "must be provided for range mode."
+            )
+
+        start = parse_date(start_date)
+        end = parse_date(end_date)
+
+        if start > end:
+            raise ValueError(
+                f"ARXIV_STATS_START ({start}) is after "
+                f"ARXIV_STATS_END ({end})."
+            )
+
+        dates = []
+
+        current = start
+
+        while current <= end:
+            dates.append(current)
             current += timedelta(days=1)
-        return days
 
-    return [utc_today() - timedelta(days=1)]
+        return dates
+
+    # --------------------------------------------------------
+    # Default: yesterday
+    # --------------------------------------------------------
+
+    yesterday = date.today() - timedelta(days=1)
+
+    return [yesterday]
 
 
-def make_query(day):
-    """submittedDate:[YYYYMMDDHHMM TO YYYYMMDDHHMM] (UTC, one day)."""
-    begin = datetime(day.year, day.month, day.day)
-    finish = begin + timedelta(days=1)
-    return (
-        f"submittedDate:[{begin.strftime('%Y%m%d%H%M')} "
-        f"TO {finish.strftime('%Y%m%d%H%M')}]"
+# ============================================================
+# arXiv statistics
+# ============================================================
+
+def get_day_statistics(target_date):
+    """
+    Query arXiv for all submissions on target_date.
+
+    A paper can contribute to multiple categories if it is
+    cross-listed.
+    """
+
+    next_date = target_date + timedelta(days=1)
+
+    start_string = target_date.strftime(
+        "%Y%m%d0000"
     )
 
-
-# -------------------------------------------------------------- network
-
-def decode_body(raw, encoding):
-    enc = (encoding or "").lower()
-    if enc == "gzip":
-        return gzip.decompress(raw)
-    if enc == "deflate":
-        try:
-            return zlib.decompress(raw)
-        except zlib.error:
-            return zlib.decompress(raw, -zlib.MAX_WBITS)
-    return raw
-
-
-def request_arxiv(query, start=0):
-    params = urllib.parse.urlencode({
-        "search_query": query,
-        "start": start,
-        "max_results": PAGE_SIZE,
-        "sortBy": "submittedDate",
-        "sortOrder": "ascending",
-    })
-    request = urllib.request.Request(
-        f"{API}?{params}", headers=HEADERS, method="GET"
+    end_string = next_date.strftime(
+        "%Y%m%d0000"
     )
 
-    for attempt in range(MAX_ATTEMPTS):
-        last = attempt == MAX_ATTEMPTS - 1
-        print(
-            f"  Requesting start={start} "
-            f"(attempt {attempt + 1}/{MAX_ATTEMPTS})"
-        )
+    query = (
+        f"submittedDate:[{start_string} TO {end_string}]"
+    )
 
-        try:
-            with urllib.request.urlopen(request, timeout=120) as response:
-                raw = response.read()
-                return decode_body(
-                    raw, response.headers.get("Content-Encoding")
-                )
-
-        except urllib.error.HTTPError as exc:
-            try:
-                body = exc.read().decode("utf-8", errors="replace")[:500]
-            except Exception:
-                body = ""
-
-            print(
-                f"  HTTP {exc.code} {exc.reason} "
-                f"(attempt {attempt + 1}/{MAX_ATTEMPTS})",
-                file=sys.stderr,
-            )
-            if body:
-                print(f"  Response body (truncated): {body}", file=sys.stderr)
-
-            if last:
-                raise
-
-            if exc.code in THROTTLE_CODES:
-                delay = min(20 * (2 ** attempt), BACKOFF_CAP)  # 20,40,80,...
-            else:
-                delay = 10 * (attempt + 1)
-
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            print(
-                f"  Network error (attempt {attempt + 1}/{MAX_ATTEMPTS}): {exc}",
-                file=sys.stderr,
-            )
-            if last:
-                raise
-            delay = 10 * (attempt + 1)
-
-        print(f"  Sleeping {delay}s before retrying...", file=sys.stderr)
-        time.sleep(delay)
-
-
-# ----------------------------------------------------------- statistics
-
-def get_day_statistics(day):
-    query = make_query(day)
-    print(f"\nProcessing {day}")
+    print()
+    print(f"Processing {target_date}")
     print(f"Query: {query}")
 
+    counts = {
+        category: 0
+        for category in CATEGORIES
+    }
+
     total = 0
-    counts = Counter()
-    start = 0
 
-    while True:
-        xml_data = request_arxiv(query, start=start)
+    # --------------------------------------------------------
+    # arXiv Python client
+    # --------------------------------------------------------
 
-        try:
-            root = ET.fromstring(xml_data)
-        except ET.ParseError as exc:
-            raise RuntimeError(
-                f"Could not parse arXiv response for {day}: {exc}"
-            ) from exc
+    client = arxiv.Client(
+        page_size=PAGE_SIZE,
+        delay_seconds=REQUEST_DELAY,
+        num_retries=NUM_RETRIES,
+    )
 
-        entries = root.findall("a:entry", NS)
-        print(f"  Received {len(entries)} entries")
+    search = arxiv.Search(
+        query=query,
+        max_results=arxiv.Search.MAX_RESULTS,
+        sort_by=arxiv.SortCriterion.SubmittedDate,
+        sort_order=arxiv.SortOrder.Ascending,
+    )
 
-        if not entries:
-            break
+    print("  Fetching submissions from arXiv...")
 
-        total += len(entries)
+    try:
 
-        for entry in entries:
-            terms = {
-                c.attrib.get("term") for c in entry.findall("a:category", NS)
-            }
+        results = client.results(search)
+
+        for result in results:
+
+            total += 1
+
+            # result.categories is a list such as:
+            #
+            # ['hep-ph', 'hep-ex']
+            #
+            categories = set(result.categories)
+
             for category in CATEGORIES:
-                if category in terms:
+
+                if category in categories:
                     counts[category] += 1
 
-        if len(entries) < PAGE_SIZE:
-            break
+            if total % PAGE_SIZE == 0:
+                print(
+                    f"  Processed {total} submissions..."
+                )
 
-        start += len(entries)
-        time.sleep(REQUEST_DELAY)
+    except Exception as exc:
 
-    row = {"date": day.isoformat(), "total": total}
+        raise RuntimeError(
+            f"Failed to query arXiv for "
+            f"{target_date}: {exc}"
+        ) from exc
+
+    # --------------------------------------------------------
+    # Build result
+    # --------------------------------------------------------
+
+    result = {
+        "date": target_date.isoformat(),
+        "total": total,
+    }
+
+    result.update(counts)
+
+    print()
+    print(
+        f"  Total submissions: {total}"
+    )
+
     for category in CATEGORIES:
-        row[category] = counts[category]
 
-    print(f"  Total submissions: {total}")
-    for category in CATEGORIES:
-        print(f"  {category:15s}: {counts[category]}")
+        print(
+            f"  {category:15s}: "
+            f"{counts[category]}"
+        )
 
-    return row
+    return result
 
 
-# ---------------------------------------------------------------- files
+# ============================================================
+# JSON handling
+# ============================================================
 
-def load_rows():
+def load_daily_data():
+    """Load existing daily statistics."""
+
     if not DAILY_FILE.exists():
         return []
+
     try:
-        with DAILY_FILE.open("r", encoding="utf-8") as f:
+
+        with DAILY_FILE.open(
+            "r",
+            encoding="utf-8",
+        ) as f:
+
             data = json.load(f)
+
+        if not isinstance(data, list):
+
+            raise ValueError(
+                "daily.json must contain a JSON list."
+            )
+
+        return data
+
     except json.JSONDecodeError as exc:
-        raise RuntimeError(f"Could not parse {DAILY_FILE}: {exc}") from exc
-    if not isinstance(data, list):
-        raise RuntimeError("daily.json must contain a JSON list.")
-    return data
+
+        raise RuntimeError(
+            f"Could not parse {DAILY_FILE}: {exc}"
+        ) from exc
 
 
-def save_json(path, obj):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    with tmp.open("w", encoding="utf-8") as f:
-        json.dump(obj, f, indent=2, ensure_ascii=False)
+def save_daily_data(data):
+    """Save daily statistics."""
+
+    DATA_DIR.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    # Keep entries sorted chronologically.
+    data.sort(
+        key=lambda row: row["date"]
+    )
+
+    with DAILY_FILE.open(
+        "w",
+        encoding="utf-8",
+    ) as f:
+
+        json.dump(
+            data,
+            f,
+            indent=2,
+            ensure_ascii=False,
+        )
+
         f.write("\n")
-    tmp.replace(path)
 
 
-def save_metadata(days):
-    now = datetime.now(timezone.utc)
-    save_json(METADATA_FILE, {
-        "description": "Daily arXiv submission counts.",
-        "counting_basis": "v1 submission timestamp",
-        "timezone": "UTC",
+def save_metadata():
+    """Save metadata describing the dataset."""
+
+    DATA_DIR.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    metadata = {
+        "updated": date.today().isoformat(),
         "categories": CATEGORIES,
-        "updated": now.date().isoformat(),
-        "updated_for_date": ", ".join(d.isoformat() for d in days),
-        "updated_at_utc": now.isoformat(),
-    })
+        "description": (
+            "Daily arXiv submission statistics for "
+            "selected particle physics, astrophysics, "
+            "and detector categories."
+        ),
+    }
+
+    with METADATA_FILE.open(
+        "w",
+        encoding="utf-8",
+    ) as f:
+
+        json.dump(
+            metadata,
+            f,
+            indent=2,
+            ensure_ascii=False,
+        )
+
+        f.write("\n")
 
 
-# ----------------------------------------------------------------- main
+# ============================================================
+# Main
+# ============================================================
 
 def main():
-    days = get_requested_dates()
+
+    requested_dates = get_requested_dates()
 
     print("=" * 60)
     print("arXiv statistics updater")
     print("=" * 60)
-    print("Dates to process: " + ", ".join(d.isoformat() for d in days))
 
+    print()
+    print("Dates to process:")
+
+    for d in requested_dates:
+        print(f"  {d}")
+
+    # --------------------------------------------------------
+    # Load existing data
+    # --------------------------------------------------------
+
+    daily_data = load_daily_data()
+
+    # Convert existing entries into a dictionary.
+    #
+    # This ensures that if we process an existing date,
+    # its old value is replaced rather than duplicated.
     existing = {
         row["date"]: row
-        for row in load_rows()
-        if isinstance(row, dict) and "date" in row
+        for row in daily_data
+        if isinstance(row, dict)
+        and "date" in row
     }
 
-    saved, skipped, failed = [], [], []
+    # --------------------------------------------------------
+    # Process requested dates
+    # --------------------------------------------------------
 
-    for index, day in enumerate(days):
-        try:
-            row = get_day_statistics(day)
-        except Exception as exc:
-            print(f"  ERROR for {day}: {exc}", file=sys.stderr)
-            failed.append(day)
-        else:
-            if row["total"] == 0:
-                # arXiv's API only lists papers once they are announced,
-                # so very recent days (and weekends) can come back empty.
-                # Don't overwrite/record a misleading all-zero row.
-                print(
-                    f"  WARNING: no entries returned for {day}; "
-                    "not saving (not announced yet?)."
-                )
-                skipped.append(day)
-            else:
-                existing[row["date"]] = row
-                saved.append(day)
+    for index, target_date in enumerate(
+        requested_dates
+    ):
 
-        if index < len(days) - 1:
-            time.sleep(REQUEST_DELAY)
+        result = get_day_statistics(
+            target_date
+        )
 
-    if saved:
-        save_json(DAILY_FILE, [existing[d] for d in sorted(existing)])
-        save_metadata(saved)
+        existing[result["date"]] = result
 
-    print("\n" + "=" * 60)
-    print(f"Saved:   {', '.join(map(str, saved)) or '-'}")
-    print(f"Skipped: {', '.join(map(str, skipped)) or '-'}")
-    print(f"Failed:  {', '.join(map(str, failed)) or '-'}")
-    print(f"Total dates in database: {len(existing)}")
+        # Delay between different dates.
+        if index < len(requested_dates) - 1:
+
+            print(
+                f"\nWaiting {REQUEST_DELAY} seconds "
+                f"before next date..."
+            )
+
+            time.sleep(
+                REQUEST_DELAY
+            )
+
+    # --------------------------------------------------------
+    # Save results
+    # --------------------------------------------------------
+
+    updated_data = list(
+        existing.values()
+    )
+
+    save_daily_data(
+        updated_data
+    )
+
+    save_metadata()
+
+    # --------------------------------------------------------
+    # Done
+    # --------------------------------------------------------
+
+    print()
     print("=" * 60)
-
-    if failed:
-        sys.exit(1)
+    print("Done.")
+    print(
+        f"Updated: {DAILY_FILE}"
+    )
+    print(
+        f"Total dates in database: "
+        f"{len(updated_data)}"
+    )
+    print("=" * 60)
 
 
 if __name__ == "__main__":

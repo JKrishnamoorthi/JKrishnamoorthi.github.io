@@ -219,7 +219,7 @@ async function loadFavourites() {
     // Load favourite IDs
     // --------------------------------------------------------
 
-    const idsResponse = await fetch("data/favourites.json", {
+    const idsResponse = await fetch(`data/favourites.json?v=${Date.now()}`, {
       cache: "no-store",
     });
 
@@ -241,9 +241,10 @@ async function loadFavourites() {
     // Load metadata
     // --------------------------------------------------------
 
-    const metadataResponse = await fetch("data/favourites_metadata.json", {
-      cache: "no-store",
-    });
+    const metadataResponse = await fetch(
+      `data/favourites_metadata.json?v=${Date.now()}`,
+      { cache: "no-store" },
+    );
 
     if (!metadataResponse.ok) {
       throw new Error(

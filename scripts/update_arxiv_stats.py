@@ -3,6 +3,7 @@
 import json
 import os
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -27,7 +28,19 @@ CATEGORIES = [
 ]
 
 PAGE_SIZE = 100
+
+# Delay between arXiv API requests.
 REQUEST_DELAY = 3.0
+
+# Number of attempts for a failed request.
+MAX_RETRIES = 4
+
+
+# A descriptive User-Agent is important when accessing arXiv.
+USER_AGENT = (
+    "JKrishnamoorthi.github.io arXiv statistics updater "
+    "(https://jkrishnamoorthi.github.io/)"
+)
 
 
 def parse_date(value):
@@ -92,6 +105,7 @@ def get_requested_dates():
 
     # Default: yesterday
     yesterday = date.today() - timedelta(days=1)
+
     return [yesterday]
 
 
@@ -103,6 +117,104 @@ def arxiv_date_string(d):
     2026-09-23 -> 202609230000
     """
     return d.strftime("%Y%m%d0000")
+
+
+def fetch_arxiv(url, target_date):
+    """
+    Fetch data from arXiv with retries.
+
+    arXiv can temporarily reject automated requests.
+    We retry common transient HTTP errors with increasing delays.
+    """
+
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept": "application/atom+xml",
+        "Accept-Encoding": "identity",
+        "Connection": "close",
+    }
+
+    request = urllib.request.Request(
+        url,
+        headers=headers,
+        method="GET",
+    )
+
+    retryable_errors = {
+        406,
+        429,
+        500,
+        502,
+        503,
+        504,
+    }
+
+    for attempt in range(1, MAX_RETRIES + 1):
+
+        try:
+            with urllib.request.urlopen(
+                request,
+                timeout=60,
+            ) as response:
+
+                return response.read()
+
+        except urllib.error.HTTPError as exc:
+
+            print(
+                f"  arXiv HTTP error {exc.code} "
+                f"(attempt {attempt}/{MAX_RETRIES})"
+            )
+
+            if exc.code not in retryable_errors:
+                raise RuntimeError(
+                    f"Failed to query arXiv for {target_date}: "
+                    f"HTTP {exc.code} {exc.reason}"
+                ) from exc
+
+            if attempt == MAX_RETRIES:
+                raise RuntimeError(
+                    f"Failed to query arXiv for {target_date} "
+                    f"after {MAX_RETRIES} attempts: "
+                    f"HTTP {exc.code} {exc.reason}"
+                ) from exc
+
+            # Increasing delay between retries.
+            delay = 5 * attempt
+
+            print(
+                f"  Retrying in {delay} seconds..."
+            )
+
+            time.sleep(delay)
+
+        except (
+            urllib.error.URLError,
+            TimeoutError,
+        ) as exc:
+
+            print(
+                f"  Network error "
+                f"(attempt {attempt}/{MAX_RETRIES}): {exc}"
+            )
+
+            if attempt == MAX_RETRIES:
+                raise RuntimeError(
+                    f"Failed to query arXiv for {target_date} "
+                    f"after {MAX_RETRIES} attempts: {exc}"
+                ) from exc
+
+            delay = 5 * attempt
+
+            print(
+                f"  Retrying in {delay} seconds..."
+            )
+
+            time.sleep(delay)
+
+    raise RuntimeError(
+        f"Failed to query arXiv for {target_date}."
+    )
 
 
 def get_day_statistics(target_date):
@@ -134,6 +246,7 @@ def get_day_statistics(target_date):
     start = 0
 
     while True:
+
         params = {
             "search_query": query,
             "start": str(start),
@@ -142,42 +255,46 @@ def get_day_statistics(target_date):
             "sortOrder": "ascending",
         }
 
-        url = API_URL + "?" + urllib.parse.urlencode(params)
+        url = (
+            API_URL
+            + "?"
+            + urllib.parse.urlencode(params)
+        )
 
-        print(f"  Fetching records {start} - {start + PAGE_SIZE - 1}")
+        print(
+            f"  Fetching records "
+            f"{start} - {start + PAGE_SIZE - 1}"
+        )
 
-        request = urllib.request.Request(
+        xml_data = fetch_arxiv(
             url,
-            headers={
-                "User-Agent": (
-                "KrishnamoorthiJ-ArXiv-Stats/1.0 "
-                "(GitHub Pages statistics; mailto:krishalphabet@gmail.com)"
-            ),
-            "Accept": "application/atom+xml, application/xml;q=0.9, */*;q=0.8",
-            },
+            target_date,
         )
 
         try:
-            with urllib.request.urlopen(request, timeout=60) as response:
-                xml_data = response.read()
-        except Exception as exc:
-            raise RuntimeError(
-                f"Failed to query arXiv for {target_date}: {exc}"
-            ) from exc
+            root = ET.fromstring(xml_data)
 
-        root = ET.fromstring(xml_data)
+        except ET.ParseError as exc:
+            raise RuntimeError(
+                f"Could not parse arXiv response for "
+                f"{target_date}: {exc}"
+            ) from exc
 
         namespace = {
             "atom": "http://www.w3.org/2005/Atom",
             "arxiv": "http://arxiv.org/schemas/atom",
         }
 
-        entries = root.findall("atom:entry", namespace)
+        entries = root.findall(
+            "atom:entry",
+            namespace,
+        )
 
         if not entries:
             break
 
         for entry in entries:
+
             total += 1
 
             categories = {
@@ -189,6 +306,7 @@ def get_day_statistics(target_date):
             }
 
             for category in CATEGORIES:
+
                 if category in categories:
                     counts[category] += 1
 
@@ -209,11 +327,14 @@ def get_day_statistics(target_date):
 
     result.update(counts)
 
-    print(f"  Total submissions: {total}")
+    print(
+        f"  Total submissions: {total}"
+    )
 
     for category in CATEGORIES:
         print(
-            f"  {category:15s}: {counts[category]}"
+            f"  {category:15s}: "
+            f"{counts[category]}"
         )
 
     return result
@@ -224,32 +345,49 @@ def load_daily_data():
         return []
 
     try:
-        with DAILY_FILE.open("r", encoding="utf-8") as f:
+        with DAILY_FILE.open(
+            "r",
+            encoding="utf-8",
+        ) as f:
+
             data = json.load(f)
 
         if not isinstance(data, list):
-            raise ValueError("daily.json must contain a JSON list.")
+            raise ValueError(
+                "daily.json must contain a JSON list."
+            )
 
         return data
 
     except json.JSONDecodeError as exc:
+
         raise RuntimeError(
             f"Could not parse {DAILY_FILE}: {exc}"
         ) from exc
 
 
 def save_daily_data(data):
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    DATA_DIR.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
-    data.sort(key=lambda row: row["date"])
+    data.sort(
+        key=lambda row: row["date"]
+    )
 
-    with DAILY_FILE.open("w", encoding="utf-8") as f:
+    with DAILY_FILE.open(
+        "w",
+        encoding="utf-8",
+    ) as f:
+
         json.dump(
             data,
             f,
             indent=2,
             ensure_ascii=False,
         )
+
         f.write("\n")
 
 
@@ -263,17 +401,23 @@ def save_metadata():
         ),
     }
 
-    with METADATA_FILE.open("w", encoding="utf-8") as f:
+    with METADATA_FILE.open(
+        "w",
+        encoding="utf-8",
+    ) as f:
+
         json.dump(
             metadata,
             f,
             indent=2,
             ensure_ascii=False,
         )
+
         f.write("\n")
 
 
 def main():
+
     requested_dates = get_requested_dates()
 
     print("=" * 60)
@@ -292,12 +436,17 @@ def main():
     existing = {
         row["date"]: row
         for row in daily_data
-        if isinstance(row, dict) and "date" in row
+        if isinstance(row, dict)
+        and "date" in row
     }
 
-    for index, target_date in enumerate(requested_dates):
+    for index, target_date in enumerate(
+        requested_dates
+    ):
 
-        result = get_day_statistics(target_date)
+        result = get_day_statistics(
+            target_date
+        )
 
         # Replace existing value for this date.
         existing[result["date"]] = result
@@ -306,16 +455,34 @@ def main():
         if index < len(requested_dates) - 1:
             time.sleep(REQUEST_DELAY)
 
-    updated_data = list(existing.values())
+    updated_data = list(
+        existing.values()
+    )
 
-    save_daily_data(updated_data)
+    save_daily_data(
+        updated_data
+    )
+
     save_metadata()
 
-    print("\n" + "=" * 60)
+    print(
+        "\n" + "=" * 60
+    )
+
     print("Done.")
-    print(f"Updated: {DAILY_FILE}")
-    print(f"Total dates in database: {len(updated_data)}")
-    print("=" * 60)
+
+    print(
+        f"Updated: {DAILY_FILE}"
+    )
+
+    print(
+        f"Total dates in database: "
+        f"{len(updated_data)}"
+    )
+
+    print(
+        "=" * 60
+    )
 
 
 if __name__ == "__main__":

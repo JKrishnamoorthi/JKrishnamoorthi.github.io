@@ -13,8 +13,8 @@ import arxiv
 
 ROOT = Path(__file__).resolve().parents[1]
 
-IDS_FILE = ROOT / "data" / "favourites.json"
-OUT_FILE = ROOT / "data" / "favourites.json"
+FAVOURITES_FILE = ROOT / "data" / "favourites.json"
+METADATA_FILE = ROOT / "data" / "favourites_metadata.json"
 
 PAGE_SIZE = 100
 REQUEST_DELAY = 3.0
@@ -22,104 +22,111 @@ NUM_RETRIES = 5
 
 
 # ============================================================
-# Read favourite paper IDs
+# Read favourite arXiv IDs
 # ============================================================
+
+def normalize_arxiv_id(value):
+    """
+    Convert different arXiv ID formats into a plain ID.
+
+    Examples:
+
+        2604.16157
+        arXiv:2604.16157
+        https://arxiv.org/abs/2604.16157
+        https://arxiv.org/pdf/2604.16157.pdf
+
+    all become:
+
+        2604.16157
+    """
+
+    paper_id = str(value).strip()
+
+    paper_id = re.sub(
+        r"^https?://arxiv\.org/(abs|pdf)/",
+        "",
+        paper_id,
+        flags=re.IGNORECASE,
+    )
+
+    paper_id = re.sub(
+        r"^arxiv:",
+        "",
+        paper_id,
+        flags=re.IGNORECASE,
+    )
+
+    paper_id = re.sub(
+        r"\.pdf$",
+        "",
+        paper_id,
+        flags=re.IGNORECASE,
+    )
+
+    return paper_id.strip()
+
 
 def get_ids():
     """
-    Read favourite paper IDs from favourites.json.
+    Read favourite arXiv IDs from favourites.json.
 
-    The file can contain either:
+    favourites.json must contain only IDs, for example:
 
     [
         "2604.16157",
         "2512.22632"
     ]
-
-    or previously generated paper dictionaries:
-
-    [
-        {
-            "id": "2604.16157",
-            ...
-        }
-    ]
-
-    IDs are de-duplicated while preserving their order.
     """
 
-    if not IDS_FILE.exists():
+    if not FAVOURITES_FILE.exists():
         raise FileNotFoundError(
-            f"Favourite file not found: {IDS_FILE}"
+            f"Favourite file not found: {FAVOURITES_FILE}"
         )
 
     try:
         raw = json.loads(
-            IDS_FILE.read_text(
+            FAVOURITES_FILE.read_text(
                 encoding="utf-8"
             )
         )
-
     except json.JSONDecodeError as exc:
         raise ValueError(
-            f"Could not parse {IDS_FILE}: {exc}"
+            f"Could not parse {FAVOURITES_FILE}: {exc}"
         ) from exc
 
     if not isinstance(raw, list):
         raise ValueError(
             "data/favourites.json must contain "
-            "a JSON list"
+            "a JSON list of arXiv IDs."
         )
 
     ids = []
 
     for item in raw:
 
-        if isinstance(item, str):
+        if not isinstance(item, str):
+            raise ValueError(
+                "data/favourites.json must contain "
+                "only arXiv ID strings."
+            )
 
-            paper_id = item.strip()
-
-        elif isinstance(item, dict) and item.get("id"):
-
-            paper_id = str(
-                item["id"]
-            ).strip()
-
-        else:
-
-            continue
-
-        # Convert a full arXiv URL into an ID.
-        paper_id = re.sub(
-            r"^https?://arxiv\.org/(abs|pdf)/",
-            "",
-            paper_id,
-        )
-
-        # Remove .pdf if somebody entered a PDF URL.
-        paper_id = re.sub(
-            r"\.pdf$",
-            "",
-            paper_id,
-            flags=re.IGNORECASE,
-        )
+        paper_id = normalize_arxiv_id(item)
 
         if paper_id:
             ids.append(paper_id)
 
     # Remove duplicates while preserving order.
-    return list(
-        dict.fromkeys(ids)
-    )
+    return list(dict.fromkeys(ids))
 
 
 # ============================================================
-# Fetch papers from arXiv
+# Fetch metadata from arXiv
 # ============================================================
 
 def fetch_papers(ids):
     """
-    Fetch favourite papers using the arXiv Python client.
+    Fetch metadata for the requested arXiv IDs.
     """
 
     if not ids:
@@ -144,19 +151,14 @@ def fetch_papers(ids):
     )
 
     try:
-
-        results = list(
+        return list(
             client.results(search)
         )
 
     except Exception as exc:
-
         raise RuntimeError(
-            f"Failed to query arXiv for "
-            f"favourite papers: {exc}"
+            f"Failed to query arXiv: {exc}"
         ) from exc
-
-    return results
 
 
 # ============================================================
@@ -165,18 +167,13 @@ def fetch_papers(ids):
 
 def paper_to_dict(paper):
     """
-    Convert an arxiv.Result object into the JSON format
-    used by the dashboard.
+    Convert arxiv.Result into the metadata format
+    used by the website.
     """
 
     paper_id = paper.get_short_id()
 
-    # arxiv.Result.get_short_id() normally gives something
-    # like:
-    #
-    # 2604.16157
-    #
-    # Remove version if present:
+    # Remove version suffix.
     #
     # 2604.16157v2 -> 2604.16157
     paper_id = re.sub(
@@ -197,11 +194,11 @@ def paper_to_dict(paper):
         paper.summary or "",
     ).strip()
 
-    authors = ", ".join(
+    authors = [
         author.name.strip()
         for author in paper.authors
         if author.name
-    )
+    ]
 
     categories = list(
         paper.categories
@@ -215,20 +212,45 @@ def paper_to_dict(paper):
         f"https://arxiv.org/pdf/{paper_id}"
     )
 
+    published = ""
+
+    if paper.published:
+        published = paper.published.isoformat()
+
     return {
         "id": paper_id,
         "title": title,
         "authors": authors,
         "categories": categories,
-        "published": (
-            paper.published.isoformat()
-            if paper.published
-            else ""
-        ),
+        "published": published,
         "summary": summary,
         "absLink": abs_link,
         "pdfLink": pdf_link,
     }
+
+
+# ============================================================
+# Save metadata
+# ============================================================
+
+def save_metadata(papers):
+    """
+    Save fetched favourite-paper metadata.
+    """
+
+    METADATA_FILE.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    METADATA_FILE.write_text(
+        json.dumps(
+            papers,
+            indent=2,
+            ensure_ascii=False,
+        ) + "\n",
+        encoding="utf-8",
+    )
 
 
 # ============================================================
@@ -242,26 +264,23 @@ def main():
     print("=" * 60)
 
     # --------------------------------------------------------
-    # Read IDs
+    # Read favourite IDs
     # --------------------------------------------------------
 
     ids = get_ids()
 
     print()
     print(
-        f"Favourite papers requested: {len(ids)}"
+        f"Favourite paper IDs: {len(ids)}"
     )
 
     if not ids:
 
         print(
-            "No favourite paper IDs found."
+            "No favourite papers found."
         )
 
-        OUT_FILE.write_text(
-            "[]\n",
-            encoding="utf-8",
-        )
+        save_metadata([])
 
         return
 
@@ -269,22 +288,15 @@ def main():
         print(f"  {paper_id}")
 
     # --------------------------------------------------------
-    # Fetch papers
+    # Fetch metadata
     # --------------------------------------------------------
 
     print()
-    print("Fetching metadata from arXiv...")
-
-    results = fetch_papers(ids)
-
     print(
-        f"Found {len(results)} "
-        f"of {len(ids)} requested papers."
+        "Fetching paper metadata from arXiv..."
     )
 
-    # --------------------------------------------------------
-    # Convert to dashboard format
-    # --------------------------------------------------------
+    results = fetch_papers(ids)
 
     papers = [
         paper_to_dict(result)
@@ -292,7 +304,7 @@ def main():
     ]
 
     # --------------------------------------------------------
-    # Preserve the order in favourites.json
+    # Preserve favourites.json order
     # --------------------------------------------------------
 
     order = {
@@ -308,7 +320,7 @@ def main():
     )
 
     # --------------------------------------------------------
-    # Warn about missing papers
+    # Check for missing papers
     # --------------------------------------------------------
 
     found_ids = {
@@ -326,35 +338,26 @@ def main():
 
         print()
         print(
-            "Warning: the following favourite "
-            "papers were not returned by arXiv:"
+            "WARNING: The following papers were "
+            "not returned by arXiv:"
         )
 
         for paper_id in missing_ids:
-            print(
-                f"  {paper_id}"
-            )
+            print(f"  {paper_id}")
 
     # --------------------------------------------------------
-    # Save
+    # Save metadata
     # --------------------------------------------------------
 
-    OUT_FILE.write_text(
-        json.dumps(
-            papers,
-            indent=2,
-            ensure_ascii=False,
-        ) + "\n",
-        encoding="utf-8",
-    )
+    save_metadata(papers)
 
     print()
     print(
-        f"Updated: {OUT_FILE}"
+        f"Fetched: {len(papers)} / {len(ids)} papers"
     )
 
     print(
-        f"Saved {len(papers)} favourite papers."
+        f"Updated: {METADATA_FILE}"
     )
 
     print("=" * 60)

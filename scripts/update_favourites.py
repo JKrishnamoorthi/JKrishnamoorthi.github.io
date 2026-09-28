@@ -1,88 +1,364 @@
+#!/usr/bin/env python3
+
 import json
 import re
-import time
-import urllib.request
-import urllib.parse
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
+import arxiv
+
+
+# ============================================================
+# Configuration
+# ============================================================
+
 ROOT = Path(__file__).resolve().parents[1]
+
 IDS_FILE = ROOT / "data" / "favourites.json"
 OUT_FILE = ROOT / "data" / "favourites.json"
-API = "https://export.arxiv.org/api/query"
 
-NS = {"atom": "http://www.w3.org/2005/Atom"}
+PAGE_SIZE = 100
+REQUEST_DELAY = 3.0
+NUM_RETRIES = 5
+
+
+# ============================================================
+# Read favourite paper IDs
+# ============================================================
 
 def get_ids():
-    raw = json.loads(IDS_FILE.read_text())
-    if not isinstance(raw, list):
-        raise ValueError("data/favourites.json must contain a JSON list")
-    ids = []
-    for item in raw:
-        if isinstance(item, str):
-            ids.append(item.strip())
-        elif isinstance(item, dict) and item.get("id"):
-            ids.append(str(item["id"]).strip())
-    return list(dict.fromkeys(i for i in ids if i))
+    """
+    Read favourite paper IDs from favourites.json.
 
-def fetch(ids):
-    query = " OR ".join(f"id:{i}" for i in ids)
-    url = API + "?" + urllib.parse.urlencode({"search_query": query, "max_results": len(ids)})
-    last = None
-    for attempt in range(5):
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "KrishnamoorthiJ-arxiv-dashboard/1.0"})
-            with urllib.request.urlopen(req, timeout=30) as response:
-                return response.read()
-        except Exception as exc:
-            last = exc
-            time.sleep(2 ** attempt)
-    raise last
+    The file can contain either:
+
+    [
+        "2604.16157",
+        "2512.22632"
+    ]
+
+    or previously generated paper dictionaries:
+
+    [
+        {
+            "id": "2604.16157",
+            ...
+        }
+    ]
+
+    IDs are de-duplicated while preserving their order.
+    """
+
+    if not IDS_FILE.exists():
+        raise FileNotFoundError(
+            f"Favourite file not found: {IDS_FILE}"
+        )
+
+    try:
+        raw = json.loads(
+            IDS_FILE.read_text(
+                encoding="utf-8"
+            )
+        )
+
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"Could not parse {IDS_FILE}: {exc}"
+        ) from exc
+
+    if not isinstance(raw, list):
+        raise ValueError(
+            "data/favourites.json must contain "
+            "a JSON list"
+        )
+
+    ids = []
+
+    for item in raw:
+
+        if isinstance(item, str):
+
+            paper_id = item.strip()
+
+        elif isinstance(item, dict) and item.get("id"):
+
+            paper_id = str(
+                item["id"]
+            ).strip()
+
+        else:
+
+            continue
+
+        # Convert a full arXiv URL into an ID.
+        paper_id = re.sub(
+            r"^https?://arxiv\.org/(abs|pdf)/",
+            "",
+            paper_id,
+        )
+
+        # Remove .pdf if somebody entered a PDF URL.
+        paper_id = re.sub(
+            r"\.pdf$",
+            "",
+            paper_id,
+            flags=re.IGNORECASE,
+        )
+
+        if paper_id:
+            ids.append(paper_id)
+
+    # Remove duplicates while preserving order.
+    return list(
+        dict.fromkeys(ids)
+    )
+
+
+# ============================================================
+# Fetch papers from arXiv
+# ============================================================
+
+def fetch_papers(ids):
+    """
+    Fetch favourite papers using the arXiv Python client.
+    """
+
+    if not ids:
+        return []
+
+    query = " OR ".join(
+        f"id:{paper_id}"
+        for paper_id in ids
+    )
+
+    client = arxiv.Client(
+        page_size=PAGE_SIZE,
+        delay_seconds=REQUEST_DELAY,
+        num_retries=NUM_RETRIES,
+    )
+
+    search = arxiv.Search(
+        query=query,
+        max_results=len(ids),
+        sort_by=arxiv.SortCriterion.SubmittedDate,
+        sort_order=arxiv.SortOrder.Ascending,
+    )
+
+    try:
+
+        results = list(
+            client.results(search)
+        )
+
+    except Exception as exc:
+
+        raise RuntimeError(
+            f"Failed to query arXiv for "
+            f"favourite papers: {exc}"
+        ) from exc
+
+    return results
+
+
+# ============================================================
+# Convert arXiv result to JSON
+# ============================================================
+
+def paper_to_dict(paper):
+    """
+    Convert an arxiv.Result object into the JSON format
+    used by the dashboard.
+    """
+
+    paper_id = paper.get_short_id()
+
+    # arxiv.Result.get_short_id() normally gives something
+    # like:
+    #
+    # 2604.16157
+    #
+    # Remove version if present:
+    #
+    # 2604.16157v2 -> 2604.16157
+    paper_id = re.sub(
+        r"v\d+$",
+        "",
+        paper_id,
+    )
+
+    title = re.sub(
+        r"\s+",
+        " ",
+        paper.title or "",
+    ).strip()
+
+    summary = re.sub(
+        r"\s+",
+        " ",
+        paper.summary or "",
+    ).strip()
+
+    authors = ", ".join(
+        author.name.strip()
+        for author in paper.authors
+        if author.name
+    )
+
+    categories = list(
+        paper.categories
+    )
+
+    abs_link = (
+        f"https://arxiv.org/abs/{paper_id}"
+    )
+
+    pdf_link = (
+        f"https://arxiv.org/pdf/{paper_id}"
+    )
+
+    return {
+        "id": paper_id,
+        "title": title,
+        "authors": authors,
+        "categories": categories,
+        "published": (
+            paper.published.isoformat()
+            if paper.published
+            else ""
+        ),
+        "summary": summary,
+        "absLink": abs_link,
+        "pdfLink": pdf_link,
+    }
+
+
+# ============================================================
+# Main
+# ============================================================
 
 def main():
+
+    print("=" * 60)
+    print("arXiv favourite papers updater")
+    print("=" * 60)
+
+    # --------------------------------------------------------
+    # Read IDs
+    # --------------------------------------------------------
+
     ids = get_ids()
+
+    print()
+    print(
+        f"Favourite papers requested: {len(ids)}"
+    )
+
     if not ids:
-        OUT_FILE.write_text("[]\n")
+
+        print(
+            "No favourite paper IDs found."
+        )
+
+        OUT_FILE.write_text(
+            "[]\n",
+            encoding="utf-8",
+        )
+
         return
 
-    xml = fetch(ids)
-    root = ET.fromstring(xml)
+    for paper_id in ids:
+        print(f"  {paper_id}")
 
-    papers = []
-    for entry in root.findall("atom:entry", NS):
-        def text(tag):
-            node = entry.find(f"atom:{tag}", NS)
-            return (node.text or "").strip() if node is not None else ""
+    # --------------------------------------------------------
+    # Fetch papers
+    # --------------------------------------------------------
 
-        links = entry.findall("atom:link", NS)
-        abs_link = next((x.attrib.get("href") for x in links if x.attrib.get("type") == "text/html"), text("id"))
-        pdf_link = next((x.attrib.get("href") for x in links if x.attrib.get("title") == "pdf"), "")
+    print()
+    print("Fetching metadata from arXiv...")
 
-        authors = ", ".join(
-            (a.find("atom:name", NS).text or "").strip()
-            for a in entry.findall("atom:author", NS)
-            if a.find("atom:name", NS) is not None
+    results = fetch_papers(ids)
+
+    print(
+        f"Found {len(results)} "
+        f"of {len(ids)} requested papers."
+    )
+
+    # --------------------------------------------------------
+    # Convert to dashboard format
+    # --------------------------------------------------------
+
+    papers = [
+        paper_to_dict(result)
+        for result in results
+    ]
+
+    # --------------------------------------------------------
+    # Preserve the order in favourites.json
+    # --------------------------------------------------------
+
+    order = {
+        paper_id: index
+        for index, paper_id in enumerate(ids)
+    }
+
+    papers.sort(
+        key=lambda paper: order.get(
+            paper["id"],
+            10**9,
         )
-        categories = [
-            c.attrib.get("term")
-            for c in entry.findall("atom:category", NS)
-            if c.attrib.get("term")
-        ]
+    )
 
-        papers.append({
-            "id": re.sub(r"^https?://arxiv.org/abs/", "", text("id")),
-            "title": re.sub(r"\s+", " ", text("title")),
-            "authors": authors,
-            "categories": categories,
-            "published": text("published"),
-            "summary": re.sub(r"\s+", " ", text("summary")),
-            "absLink": abs_link,
-            "pdfLink": pdf_link
-        })
+    # --------------------------------------------------------
+    # Warn about missing papers
+    # --------------------------------------------------------
 
-    order = {paper_id: i for i, paper_id in enumerate(ids)}
-    papers.sort(key=lambda p: order.get(p["id"], 10**9))
-    OUT_FILE.write_text(json.dumps(papers, indent=2, ensure_ascii=False) + "\n")
+    found_ids = {
+        paper["id"]
+        for paper in papers
+    }
+
+    missing_ids = [
+        paper_id
+        for paper_id in ids
+        if paper_id not in found_ids
+    ]
+
+    if missing_ids:
+
+        print()
+        print(
+            "Warning: the following favourite "
+            "papers were not returned by arXiv:"
+        )
+
+        for paper_id in missing_ids:
+            print(
+                f"  {paper_id}"
+            )
+
+    # --------------------------------------------------------
+    # Save
+    # --------------------------------------------------------
+
+    OUT_FILE.write_text(
+        json.dumps(
+            papers,
+            indent=2,
+            ensure_ascii=False,
+        ) + "\n",
+        encoding="utf-8",
+    )
+
+    print()
+    print(
+        f"Updated: {OUT_FILE}"
+    )
+
+    print(
+        f"Saved {len(papers)} favourite papers."
+    )
+
+    print("=" * 60)
+
 
 if __name__ == "__main__":
     main()

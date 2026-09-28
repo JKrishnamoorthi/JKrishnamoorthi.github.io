@@ -1,2 +1,29 @@
-["2606.09714",
-"2604.12897"]
+[
+  {
+    "id": "2606.09714",
+    "title": "Atmospheric Neutrino Oscillations: the Full Picture",
+    "authors": "Philipp Eller",
+    "categories": [
+      "hep-ex",
+      "hep-ph"
+    ],
+    "published": "2026-06-08T16:41:51+00:00",
+    "summary": "We present the first combined oscillation analysis of recent atmospheric neutrino datasets, featuring data from Super-Kamiokande, IceCube-DeepCore, and KM3NeT/ORCA together with reactor data from Daya Bay. Such combinations have long been considered infeasible outside experimental collaborations; we demonstrate that a unified physics model can simultaneously describe all datasets with no significant parameter tensions. Fitting 839\\,048 events across 1536 ins with 91 parameters, our combined analysis yields competitive measurements of the neutrino mixing parameters, and prefers the Normal over the Inverted Mass Ordering at $3σ$ significance.",
+    "absLink": "https://arxiv.org/abs/2606.09714",
+    "pdfLink": "https://arxiv.org/pdf/2606.09714"
+  },
+  {
+    "id": "2604.12897",
+    "title": "Defining Absence: The Origin of \"Neutrinoless\" and How it Obscures the Physics of Matter Creation",
+    "authors": "Francesco Vissani",
+    "categories": [
+      "physics.hist-ph",
+      "hep-ph",
+      "nucl-ex"
+    ],
+    "published": "2026-04-14T15:46:16+00:00",
+    "summary": "The term 'neutrinoless' is a cornerstone of modern particle physics, yet it defines a fundamental process by what is missing rather than what is created. We trace the origins of this privative neologism to a 1953 experimental claim and show how a 'sociology of suspicion' transformed Ettore Majorana's affirmative ontology into an agnostic shorthand. By examining this linguistic shift, we argue that our current terminology may obscure the profound physical meaning of the search. Reclaiming the language of 'matter creation' is not merely a semantic choice, but a timely conceptual shift to bridge the gap between experimental caution and the radical character of the laws of nature we aim to uncover.",
+    "absLink": "https://arxiv.org/abs/2604.12897",
+    "pdfLink": "https://arxiv.org/pdf/2604.12897"
+  }
+]

@@ -174,7 +174,7 @@ def get_day_statistics(target_date):
 
     search = arxiv.Search(
         query=query,
-        max_results=arxiv.Search.MAX_RESULTS,
+        max_results=None,
         sort_by=arxiv.SortCriterion.SubmittedDate,
         sort_order=arxiv.SortOrder.Ascending,
     )
@@ -189,10 +189,6 @@ def get_day_statistics(target_date):
 
             total += 1
 
-            # result.categories is a list such as:
-            #
-            # ['hep-ph', 'hep-ex']
-            #
             categories = set(result.categories)
 
             for category in CATEGORIES:

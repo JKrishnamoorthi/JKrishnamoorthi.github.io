@@ -53,5 +53,16 @@
     "astro-ph.HE": 19,
     "astro-ph.CO": 18,
     "physics.ins-det": 5
+  },
+  {
+    "date": "2026-09-29",
+    "total": 0,
+    "hep-ph": 0,
+    "hep-ex": 0,
+    "hep-th": 0,
+    "nucl-th": 0,
+    "astro-ph.HE": 0,
+    "astro-ph.CO": 0,
+    "physics.ins-det": 0
   }
 ]

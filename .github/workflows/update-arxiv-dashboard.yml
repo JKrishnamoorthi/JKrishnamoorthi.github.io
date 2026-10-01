@@ -2,7 +2,7 @@ name: Update arXiv dashboard data
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "7 4 * * *"
 
   workflow_dispatch:
     inputs:

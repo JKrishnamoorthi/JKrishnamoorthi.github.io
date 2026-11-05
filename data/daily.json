@@ -1362,5 +1362,16 @@
     "astro-ph.HE": 14,
     "astro-ph.CO": 13,
     "physics.ins-det": 1
+  },
+  {
+    "date": "2026-11-04",
+    "total": 1159,
+    "hep-ph": 18,
+    "hep-ex": 6,
+    "hep-th": 23,
+    "nucl-th": 6,
+    "astro-ph.HE": 14,
+    "astro-ph.CO": 9,
+    "physics.ins-det": 2
   }
 ]

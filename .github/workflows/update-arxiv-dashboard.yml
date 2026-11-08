@@ -17,6 +17,10 @@ permissions:
 jobs:
   update-dashboard:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: update-arxiv-dashboard
+      cancel-in-progress: false
 
     steps:
 
